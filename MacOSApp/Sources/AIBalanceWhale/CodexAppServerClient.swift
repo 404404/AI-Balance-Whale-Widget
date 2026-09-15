@@ -73,6 +73,44 @@ enum ProviderError: LocalizedError {
 }
 
 enum CodexLocator {
+    static func expandingPath(_ raw: String) -> String {
+        (raw.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+    }
+
+    static func effectiveHome(configuredHome: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        let configured = expandingPath(configuredHome)
+        if !configured.isEmpty { return URL(fileURLWithPath: configured).standardizedFileURL }
+        if let inherited = environment["CODEX_HOME"], !inherited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: expandingPath(inherited)).standardizedFileURL
+        }
+        return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex", isDirectory: true).standardizedFileURL
+    }
+
+    static func connectionInfo(configuredPath: String, configuredHome: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> [String: Any] {
+        let configured = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let executableURL = executable(configuredPath: configuredPath)
+        let home = effectiveHome(configuredHome: configuredHome, environment: environment)
+        let fileManager = FileManager.default
+        var result: [String: Any] = [
+            "configuredPath": configured,
+            "pathSource": configured.isEmpty ? "auto" : "manual",
+            "homeSource": configuredHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (environment["CODEX_HOME"] == nil ? "default" : "environment") : "manual",
+            "effectiveHome": home.path,
+            "configPath": home.appendingPathComponent("config.toml").path,
+            "configExists": fileManager.fileExists(atPath: home.appendingPathComponent("config.toml").path),
+            "sessionsPath": home.appendingPathComponent("sessions", isDirectory: true).path,
+            "sessionsExists": fileManager.fileExists(atPath: home.appendingPathComponent("sessions", isDirectory: true).path)
+        ]
+        if let executableURL {
+            result["resolvedPath"] = executableURL.path
+            result["path"] = executableURL.path
+        } else {
+            result["resolvedPath"] = NSNull()
+            result["path"] = ""
+        }
+        return result
+    }
+
     static func executable(configuredPath: String) -> URL? {
         let fileManager = FileManager.default
         let explicit = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -278,10 +316,10 @@ final class CodexAppServerClient {
         newProcess.executableURL = executable
         newProcess.arguments = ["app-server", "--listen", "stdio://"]
         var environment = ProcessInfo.processInfo.environment
-        let configuredHome = preferences.codexHome.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !configuredHome.isEmpty {
-            environment["CODEX_HOME"] = (configuredHome as NSString).expandingTildeInPath
-        }
+        // Finder does not inherit a shell profile. Resolve the same effective
+        // Home for both Finder and terminal launches, and pass it explicitly to
+        // only the app-server process owned by this app.
+        environment["CODEX_HOME"] = CodexLocator.effectiveHome(configuredHome: preferences.codexHome, environment: environment).path
         newProcess.environment = environment
         newProcess.standardInput = stdin
         newProcess.standardOutput = stdout
