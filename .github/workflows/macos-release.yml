@@ -1,0 +1,178 @@
+name: macOS Release
+
+on:
+  push:
+    tags: ['macos-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'SemVer release version, for example 0.1.0-beta.1'
+        required: true
+        type: string
+      tag:
+        description: 'Optional exact tag; must be macos-v<version>'
+        required: false
+        type: string
+      prerelease:
+        description: 'Publish as a GitHub prerelease'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      INPUT_VERSION: ${{ inputs.version }}
+      INPUT_TAG: ${{ inputs.tag }}
+      INPUT_PRERELEASE: ${{ inputs.prerelease }}
+      SIGNING_IDENTITY_SECRET: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Resolve and validate release identity
+        id: release
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            TAG_NAME="$GITHUB_REF_NAME"
+            [[ "$TAG_NAME" =~ ^macos-v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]
+            VERSION="${TAG_NAME#macos-v}"
+            [[ -z "$INPUT_VERSION" || "$INPUT_VERSION" == "$VERSION" ]]
+            PRERELEASE=true
+          else
+            VERSION="$INPUT_VERSION"
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]
+            TAG_NAME="${INPUT_TAG:-macos-v$VERSION}"
+            [[ "$TAG_NAME" == "macos-v$VERSION" ]]
+            [[ "$INPUT_PRERELEASE" == "true" || "$INPUT_PRERELEASE" == "false" ]]
+            PRERELEASE="$INPUT_PRERELEASE"
+          fi
+          [[ ${#VERSION} -le 64 && ${#TAG_NAME} -le 80 ]]
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            [[ "$(git rev-list -n 1 "$TAG_NAME")" == "$GITHUB_SHA" ]]
+          elif git ls-remote --exit-code --refs origin "refs/tags/$TAG_NAME" >/dev/null 2>&1; then
+            echo "tag already exists: $TAG_NAME" >&2
+            exit 10
+          fi
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "release already exists: $TAG_NAME" >&2
+            exit 11
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Verify runner toolchain
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
+          test "$(uname -m)" = "arm64"
+      - name: Configure signing mode
+        run: |
+          set -euo pipefail
+          if [[ -n "$SIGNING_IDENTITY_SECRET" ]]; then
+            [[ -n "$CERTIFICATE_P12" && -n "$CERTIFICATE_PASSWORD" ]] || { echo 'Developer ID identity requires certificate secrets' >&2; exit 20; }
+            [[ -n "$APPLE_ID_SECRET" && -n "$APPLE_TEAM_ID_SECRET" && -n "$APPLE_APP_PASSWORD" ]] || { echo 'Developer ID signing requires notarization secrets' >&2; exit 21; }
+            KEYCHAIN="$RUNNER_TEMP/ai-balance-whale.keychain-db"
+            security create-keychain -p temporary "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p temporary "$KEYCHAIN"
+            echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+            security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+            security list-keychains -d user -s "$KEYCHAIN"
+            security default-keychain -s "$KEYCHAIN"
+            echo "SIGNING_MODE=developer-id" >> "$GITHUB_ENV"
+            echo "SIGNING_IDENTITY=$SIGNING_IDENTITY_SECRET" >> "$GITHUB_ENV"
+            echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          else
+            echo "SIGNING_MODE=ad-hoc" >> "$GITHUB_ENV"
+            echo 'No Developer ID secrets configured; using ad-hoc signing.'
+          fi
+      - name: Run fixture tests
+        run: swift test --package-path MacOSApp
+      - name: Build App bundle
+        env:
+          APP_VERSION: ${{ steps.release.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: MacOSApp/scripts/build.sh
+      - name: Create and validate DMG
+        env:
+          APP_VERSION: ${{ steps.release.outputs.version }}
+          DMG_NAME: AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg
+        run: MacOSApp/scripts/create-dmg.sh
+      - name: Notarize Developer ID build
+        if: env.SIGNING_MODE == 'developer-id'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool submit "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
+          xcrun stapler validate "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
+      - name: Recompute DMG checksum after signing
+        run: shasum -a 256 "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg" > MacOSApp/dist/SHA256SUMS
+      - name: Verify release source and assets
+        run: |
+          set -euo pipefail
+          APP="MacOSApp/dist/AI Balance Whale.app"
+          DMG="MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
+          test "$(git rev-parse HEAD)" = "${{ steps.release.outputs.source_sha }}"
+          test -f "$DMG" && test -f MacOSApp/dist/SHA256SUMS
+          test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "${{ steps.release.outputs.version }}"
+          mkdir -p "$RUNNER_TEMP/ai-balance-whale-verify"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/ai-balance-whale-verify" "$DMG" >/dev/null
+          test -d "$RUNNER_TEMP/ai-balance-whale-verify/AI Balance Whale.app"
+          test -e "$RUNNER_TEMP/ai-balance-whale-verify/Applications"
+          hdiutil detach "$RUNNER_TEMP/ai-balance-whale-verify" >/dev/null
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/AIBalanceWhale" | grep -Eq '(^| )arm64( |$)'
+      - name: Write release notes
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          ## AI Balance Whale ${{ steps.release.outputs.version }}
+
+          - Source commit: `${{ steps.release.outputs.source_sha }}`
+          - Target: macOS 14+, Apple Silicon arm64
+          - Codex provider: local stdio `codex app-server`; fixture tests run in CI, real account data is never used in CI
+          - Signing: ${SIGNING_MODE}; Developer ID builds are notarized and stapled when configured
+          - Upstream baseline: `MeteorNOX/DeepSeek-Balance-Whale-Widget@40cebc2937aea674247a0d0e03e16c154f7b9864`
+
+          The DMG includes the app and an Applications shortcut. The app does not bundle or update Codex CLI.
+          EOF
+      - name: Create draft release, upload assets, then publish
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG_NAME" --target "$SOURCE_SHA" --title "AI Balance Whale $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" --draft
+          gh release upload "$TAG_NAME" "MacOSApp/dist/AI-Balance-Whale-macos-${VERSION}-arm64.dmg" MacOSApp/dist/SHA256SUMS
+          if [[ "$PRERELEASE" == "true" ]]; then
+            gh release edit "$TAG_NAME" --draft=false --prerelease
+          else
+            gh release edit "$TAG_NAME" --draft=false --latest
+          fi
+          gh release view "$TAG_NAME" --json url,tagName,isDraft,isPrerelease,assets
+      - name: Clean temporary keychain
+        if: always() && env.KEYCHAIN != ''
+        run: security delete-keychain "$KEYCHAIN" || true
