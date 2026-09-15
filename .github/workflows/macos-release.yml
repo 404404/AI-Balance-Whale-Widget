@@ -149,11 +149,11 @@ jobs:
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
           ## AI Balance Whale ${{ steps.release.outputs.version }}
 
-          - Source commit: `${{ steps.release.outputs.source_sha }}`
+          - Source commit: ${{ steps.release.outputs.source_sha }}
           - Target: macOS 14+, Apple Silicon arm64
-          - Codex provider: local stdio `codex app-server`; fixture tests run in CI, real account data is never used in CI
+          - Codex provider: local stdio codex app-server; fixture tests run in CI, real account data is never used in CI
           - Signing: ${SIGNING_MODE}; Developer ID builds are notarized and stapled when configured
-          - Upstream baseline: `MeteorNOX/DeepSeek-Balance-Whale-Widget@40cebc2937aea674247a0d0e03e16c154f7b9864`
+          - Upstream baseline: MeteorNOX/DeepSeek-Balance-Whale-Widget@40cebc2937aea674247a0d0e03e16c154f7b9864
 
           The DMG includes the app and an Applications shortcut. The app does not bundle or update Codex CLI.
           EOF
