@@ -1,4 +1,5 @@
 import Cocoa
+import CodexCore
 
 enum WhaleLayout {
     // Dimensions are CSS points in the standalone widget viewport. AppKit keeps
