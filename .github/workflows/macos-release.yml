@@ -108,7 +108,7 @@ jobs:
       - name: Run fixture tests
         run: swift test --package-path MacOSApp
       - name: Regression source checks
-        run: MacOSApp/scripts/verify-source.sh
+        run: bash MacOSApp/scripts/verify-source.sh
       - name: Build App bundle
         env:
           APP_VERSION: ${{ steps.release.outputs.version }}
