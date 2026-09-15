@@ -1,16 +1,18 @@
 # macOS capability matrix
 
-This table records the fork boundary against the upstream DSH widget. It is
-kept explicit so the local app does not present unsupported DSH actions as if
-they were available.
+This matrix describes the implemented local AppKit/WKWebView boundary. The legacy
+DSH plugin remains a separate npm package and keeps its upstream attribution.
 
-| Upstream entry | Mac entry | Data source | Status / evidence |
-| --- | --- | --- | --- |
-| Whale role image and click animation | Local `WKWebView` whale widget | Bundled `assets/DSniang1.png`, local HTML | Implemented; image is also the AppIcon source; drag uses cumulative screen deltas and cancel handling. |
-| Bubble display and refresh action | Local bubble above the whale | `ProviderState` bridge, no DSH route | Implemented; outer page has no scrollbar, hidden bubble is removed from hit testing. |
-| DSH balance / ledger routes | No equivalent local route | N/A | Not ported; no fake balance is shown. |
-| Upstream custom vendor templates and HTTP balance calls | No equivalent local provider UI | N/A | Not ported in this release; these actions are not exposed in the Mac menu. |
-| Codex account and rate-limit windows | Native `CodexAppServerClient` | User-owned `codex app-server` over stdio | Implemented and verified with a real local CLI session; only `account/read` and `account/rateLimits/read` are used. |
-| Upstream role / bubble / audio resource managers | Bundled runtime resources only | Application bundle resources | Runtime assets are copied and validated; editors/importers remain unported. |
-| DSH task-end event accounting | No event source | N/A | Explicitly unavailable; the Mac app never turns missing events into zero usage. |
-| DSH credential service | No WebView credential bridge | Codex CLI / CODEX_HOME owned by the user | Codex auth remains outside the app; tokens and `auth.json` are not passed to WebView or logs. |
+| Upstream capability | macOS entry | Status |
+| --- | --- | --- |
+| Whale role, click/press animation, drag, snap and flip | Local transparent WKWebView plus native NSPanel layout model | Implemented; old 248x274 frames migrate to the current computed content size. |
+| Bubble display and custom click menu | Local HTML bubble and custom context menu | Implemented; click opens immediately even when Codex is offline; no outer scrollbar. |
+| Codex account and rate-limit windows | Native stdio codex app-server | Implemented; account/read, account/rateLimits/read and rateLimits/updated only. |
+| Vendor balance/quota templates and HTTP fields | Native URLSession adapter and Keychain references | Implemented for configured endpoints; no-balance vendors are explicitly unavailable and never show fabricated values. |
+| General / desktop settings | One key/resizable local Settings.html window | Implemented; scale, snap, position reset, topmost, Spaces, login item and passthrough share one source of truth. |
+| Role and image manager | Application Support resource store | Implemented; built-in previews, import, use, delete and role persistence. |
+| Bubble content editor | Persisted text/link/image/status step list | Implemented; edits preview in the widget and remain after restart. |
+| Audio settings | Built-in/imported audio references, volume and press/release selection | Implemented; secrets are not involved. |
+| Reminders and usage records | Threshold/budget preferences and source-labelled records | Implemented as configuration; official Codex quota is not converted into a fake local token ledger. A real session event source is not bundled. |
+| DSH routes and browser host | None | Not used by the Mac App; it runs without DSH, Node.js or a browser. |
+| Developer ID signing/notarization | GitHub Actions signing mode | Ad-hoc is supported when secrets are absent; Developer ID/notarization is conditional on repository secrets. |

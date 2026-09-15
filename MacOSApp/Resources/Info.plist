@@ -15,7 +15,7 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>AIAppReleaseTag</key><string>0.1.0-beta.2</string>
+  <key>AIAppReleaseTag</key><string>0.1.0-beta.4</string>
   <key>NSHumanReadableCopyright</key><string>AI Balance Whale fork by 404404; whale artwork and DSH plugin by MeteorNOX, MIT licensed.</string>
 </dict>
 </plist>

@@ -8,19 +8,19 @@
 
 1. macOS 14 或更高版本（首版仅 Apple Silicon arm64）。
 2. 安装并登录 Codex CLI；App 不会自动下载、捆绑或升级 CLI。Finder 启动时若找不到终端里的 `codex`，在「设置」中指定可执行文件路径，并可指定实际 `CODEX_HOME`。
-3. 从本 fork 的 [macos-v0.1.0-beta.3 Release](https://github.com/404404/AI-Balance-Whale-Widget/releases) 下载 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。首次预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
+3. 从本 fork 的 [macos-v0.1.0-beta.4 Release](https://github.com/404404/AI-Balance-Whale-Widget/releases) 下载 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。首次预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
 
 ### macOS 首版范围
 
 - 已实现：透明无边框浮窗、统一鲸鱼 AppIcon 与菜单栏图标、显示/隐藏、设置、刷新、退出、非激活显示、位置/大小/音效/展示偏好保存、多显示器位置夹紧与断屏恢复、睡眠暂停/唤醒刷新、可选登录启动、鼠标穿透恢复、置顶与跨桌面开关、Codex 多额度桶/动态窗口/重置倒计时/过期缓存；气泡页面不产生外层滚动条，鲸鱼图片禁止浏览器原生拖拽并使用累计阈值/取消事件处理。
-- 仍未移植：DSH 的其他厂商余额、复杂账本、编辑器、会话 token 本机统计、角色/图片/音效资源编辑器；本地 App 不会为这些未实现功能显示无效入口。
+- 已实现：统一设置中心（通用与桌面、模型与账户、角色与图片、气泡与内容、音效、提醒与用量、关于与诊断）；厂商 HTTP 配置、角色/音效资源导入、气泡步骤编辑和配置备份恢复均可保存并在重启后恢复。没有官方接口或会话事件来源的厂商/账本只显示明确的不可用状态，不伪造数据。
 
 ### 本地开发与发布
 
 ```bash
 swift test --package-path MacOSApp
-APP_VERSION=0.1.0-beta.3 BUILD_NUMBER=2 MacOSApp/scripts/build.sh
-APP_VERSION=0.1.0-beta.3 MacOSApp/scripts/create-dmg.sh
+APP_VERSION=0.1.0-beta.4 BUILD_NUMBER=2 MacOSApp/scripts/build.sh
+APP_VERSION=0.1.0-beta.4 MacOSApp/scripts/create-dmg.sh
 ```
 
 GitHub Actions 的 macOS CI 在 PR 与相关分支 push 时运行脱敏额度 fixture 测试并检查 arm64 App。发布 workflow 只在 `macos-v*` 标签或默认分支已包含该 workflow 后的 `workflow_dispatch` 运行，输入会严格校验版本与标签、拒绝现有标签/Release，并在同一 SHA 上构建、检查 DMG、上传 `SHA256SUMS` 后再公开预发布。普通 push 不发布 npm 或 Release；旧 DSH 插件版本仍由根目录 `package.json` 单独管理，保留上游插件用途与 MIT 许可证。

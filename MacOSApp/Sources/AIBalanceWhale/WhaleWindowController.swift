@@ -12,6 +12,9 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private let panel: WhalePanel
     private let webView: WKWebView
     private var hasLoaded = false
+    private var isLeftAttached = false
+    private var isRightAttached = false
+    private var debugEvents: [(Date, String)] = []
 
     init(provider: CodexAppServerClient) {
         self.provider = provider
@@ -22,17 +25,13 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.setValue(false, forKey: "drawsBackground")
         webView = view
-        panel = WhalePanel(
-            contentRect: CGRect(x: 0, y: 0, width: 248, height: 410),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        panel = WhalePanel(contentRect: CGRect(origin: .zero, size: WhaleLayout.baseSize), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         super.init(window: panel)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
+        panel.isMovableByWindowBackground = false
         panel.contentView = webView
         contentController.add(self, name: "bridge")
         webView.navigationDelegate = self
@@ -43,21 +42,16 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func load() {
-        if let html = Bundle.main.url(forResource: "WhaleWidget", withExtension: "html") {
-            let resources = Bundle.main.resourceURL ?? html.deletingLastPathComponent()
-            webView.loadFileURL(html, allowingReadAccessTo: resources)
-        } else {
+        guard let html = Bundle.main.url(forResource: "WhaleWidget", withExtension: "html") else {
+            recordDebug("missing WhaleWidget.html")
             webView.loadHTMLString("<html><body style='background:transparent'>AI Balance Whale</body></html>", baseURL: nil)
+            return
         }
+        webView.loadFileURL(html, allowingReadAccessTo: Bundle.main.resourceURL ?? html.deletingLastPathComponent())
     }
 
-    func show() {
-        guard let panel = window else { return }
-        panel.orderFrontRegardless()
-    }
-
+    func show() { window?.orderFrontRegardless() }
     func hide() { window?.orderOut(nil) }
-
     var isVisible: Bool { window?.isVisible == true }
 
     func applyPreferences() {
@@ -66,11 +60,19 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         panel.level = preferences.alwaysOnTop ? .floating : .normal
         panel.ignoresMouseEvents = preferences.mousePassthrough
         panel.collectionBehavior = preferences.allSpaces ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.moveToActiveSpace]
+        resizeToCurrentLayout(preserveAnchor: true)
         renderCurrentState()
     }
 
-    func openSettings() {
-        NotificationCenter.default.post(name: .aiWhaleOpenSettings, object: nil)
+    func resetPositionAndSize() {
+        AppPreferences.shared.resetLayout()
+        window?.setFrame(defaultFrame(), display: true)
+        clampAndSave()
+        renderCurrentState()
+    }
+
+    func openSettings(page: String? = nil) {
+        NotificationCenter.default.post(name: .aiWhaleOpenSettings, object: nil, userInfo: ["page": page ?? "general"])
     }
 
     func refresh() { provider.refresh() }
@@ -80,70 +82,147 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         switch type {
         case "ready":
             hasLoaded = true
+            recordDebug("ready")
+            sendLayout()
             renderCurrentState()
             provider.refresh()
-        case "refresh":
-            provider.refresh()
-        case "openSettings":
-            openSettings()
+        case "refresh": provider.refresh()
+        case "openSettings": openSettings(page: body["page"] as? String)
+        case "toggleBubble": evaluate("window.__AIWhale && window.__AIWhale.toggleBubble()")
+        case "restoreLayout": resetPositionAndSize()
         case "dragMove":
-            guard let dx = body["dx"] as? NSNumber, let dy = body["dy"] as? NSNumber else { return }
+            guard !AppPreferences.shared.mousePassthrough, let dx = body["dx"] as? NSNumber, let dy = body["dy"] as? NSNumber else { return }
             moveBy(dx: CGFloat(dx.doubleValue), dy: CGFloat(dy.doubleValue))
         case "dragEnd":
+            guard (body["moved"] as? NSNumber)?.boolValue == true else { return }
             snapAndSave()
-        default:
-            // The bridge intentionally has no file, shell, URL, or arbitrary RPC message.
-            break
+        default: recordDebug("ignored bridge message: \(type)")
         }
     }
 
-    private func renderCurrentState() {
-        guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
-        render(appDelegate.latestProviderState)
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        hasLoaded = false
+        recordDebug("navigation finished")
+        sendLayout()
     }
 
-    func render(_ state: ProviderState) {
-        guard hasLoaded || webView.url != nil else { return }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        hasLoaded = false
+        recordDebug("navigation failed: \(error.localizedDescription)")
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        hasLoaded = false
+        recordDebug("provisional navigation failed: \(error.localizedDescription)")
+    }
+
+    func render(_ state: ProviderState, externalBalances: [[String: Any]] = []) {
+        guard hasLoaded else { return }
         var buckets: [[String: Any]] = []
         for bucket in state.buckets {
-            var item: [String: Any] = [
-                "id": bucket.id,
-                "name": bucket.windowName,
-                "window": bucket.window.rawValue,
-                "windowName": RateLimitPresentation.windowName(for: bucket, durationMinutes: bucket.windowDurationMinutes),
-            ]
+            var item: [String: Any] = ["id": bucket.id, "name": bucket.windowName, "window": bucket.window.rawValue, "windowName": RateLimitPresentation.windowName(for: bucket, durationMinutes: bucket.windowDurationMinutes)]
             if let used = bucket.usedPercent { item["usedPercent"] = used }
             if let remaining = bucket.remainingPercent { item["remainingPercent"] = remaining }
             if let reset = bucket.resetsAt { item["resetsAt"] = reset.timeIntervalSince1970 * 1000 }
             buckets.append(item)
         }
-        var object: [String: Any] = [
-            "status": state.status.rawValue,
-            "message": state.message,
-            "email": state.email ?? NSNull(),
-            "planType": state.planType ?? NSNull(),
+        let configuration = WhaleConfigurationStore.shared.snapshot()
+        let appearance = configuration["appearance"] as? [String: Any] ?? [:]
+        let sound = configuration["sound"] as? [String: Any] ?? [:]
+        let bubble = configuration["bubble"] as? [String: Any] ?? [:]
+        let roleID = appearance["roleId"] as? String
+        let roleImage = roleID.flatMap { WhaleConfigurationStore.shared.resourceDataURL(kind: "roles", id: $0) } ?? "DSniang1.png"
+        let pressRef = sound["press"] as? String ?? "Ya1.mp3"
+        let releaseRef = sound["release"] as? String ?? "Ya2.mp3"
+        let pressSound = WhaleConfigurationStore.shared.resourceDataURL(kind: "audio", id: pressRef) ?? pressRef
+        let releaseSound = WhaleConfigurationStore.shared.resourceDataURL(kind: "audio", id: releaseRef) ?? releaseRef
+        let object: [String: Any] = [
+            "status": state.status.rawValue, "message": state.message,
+            "email": state.email ?? NSNull(), "planType": state.planType ?? NSNull(),
             "lastUpdated": state.lastUpdated.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull(),
-            "buckets": buckets,
-            "scale": AppPreferences.shared.scale,
+            "buckets": buckets, "scale": AppPreferences.shared.scale,
             "soundEnabled": AppPreferences.shared.soundEnabled,
-            "flip": isLeftAttached,
+            "bubbleCloseAfterSeconds": AppPreferences.shared.bubbleCloseAfterSeconds,
+            "showMenuButton": AppPreferences.shared.showMenuButton,
+            "flip": isLeftAttached, "roleImage": roleImage,
+            "soundVolume": sound["volume"] ?? 0.45,
+            "pressSound": pressSound, "releaseSound": releaseSound,
+            "bubbleSteps": bubble["steps"] ?? [],
+            "vendors": externalBalances,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("window.__AIWhale && window.__AIWhale.update(\(json));", completionHandler: nil)
+        evaluate("window.__AIWhale && window.__AIWhale.update(\(json))")
     }
 
-    private var isLeftAttached = false
+    func clampAndSave() {
+        guard let panel = window, let screen = screenForPanel(panel) else { return }
+        let visible = screen.visibleFrame
+        var frame = panel.frame
+        frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - frame.width))
+        frame.origin.y = min(max(frame.origin.y, visible.minY), max(visible.minY, visible.maxY - frame.height))
+        panel.setFrame(frame, display: false)
+        isLeftAttached = abs(frame.minX - visible.minX) < 1
+        isRightAttached = abs(frame.maxX - visible.maxX) < 1
+        AppPreferences.shared.saveFrame(frame)
+    }
+
+    func diagnostics() -> [[String: Any]] {
+        debugEvents.map { ["time": $0.0.timeIntervalSince1970, "event": $0.1] }
+    }
+
+    func renderCurrentState() {
+        guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
+        render(appDelegate.latestProviderState, externalBalances: appDelegate.latestExternalBalances)
+    }
 
     private func restoreFrame() {
         guard let panel = window else { return }
-        let fallback = CGRect(x: 0, y: 0, width: 248, height: 410)
-        let saved = AppPreferences.shared.savedFrame() ?? fallback
-        panel.setFrame(saved, display: false)
+        let saved = AppPreferences.shared.savedFrame()
+        let fallback = defaultFrame()
+        guard let saved else { panel.setFrame(fallback, display: false); clampAndSave(); return }
+        let newSize = WhaleLayout.contentSize(scale: AppPreferences.shared.scale)
+        var frame = CGRect(origin: saved.origin, size: newSize)
+        let screen = screenForPanel(panel, proposedFrame: saved)
+        let visible = screen?.visibleFrame
+        let nearRight = visible.map { abs(saved.maxX - $0.maxX) < 28 } ?? false
+        let nearLeft = visible.map { abs(saved.minX - $0.minX) < 28 } ?? false
+        if nearRight { frame.origin.x += saved.width - newSize.width }
+        else if !nearLeft { frame.origin.x += (saved.width - newSize.width) / 2 }
+        frame.origin.y += saved.height - newSize.height
+        panel.setFrame(frame, display: false)
         clampAndSave()
     }
 
+    private func defaultFrame() -> CGRect {
+        let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let size = WhaleLayout.contentSize(scale: AppPreferences.shared.scale)
+        return CGRect(x: visible.maxX - size.width - 24, y: visible.minY + 24, width: size.width, height: size.height)
+    }
+
+    private func resizeToCurrentLayout(preserveAnchor: Bool) {
+        guard let panel = window else { return }
+        let old = panel.frame
+        let newSize = WhaleLayout.contentSize(scale: AppPreferences.shared.scale)
+        guard old.size != newSize else { sendLayout(); return }
+        var frame = old
+        frame.size = newSize
+        if preserveAnchor {
+            if isRightAttached { frame.origin.x = old.maxX - newSize.width }
+            else if !isLeftAttached { frame.origin.x = old.midX - newSize.width / 2 }
+        }
+        panel.setFrame(frame, display: false)
+        clampAndSave()
+        sendLayout()
+    }
+
+    private func sendLayout() {
+        let scale = AppPreferences.shared.scale
+        let size = WhaleLayout.contentSize(scale: scale)
+        evaluate("window.__AIWhale && window.__AIWhale.setLayout({scale:\(scale),width:\(size.width),height:\(size.height)})")
+    }
+
     private func moveBy(dx: CGFloat, dy: CGFloat) {
-        guard let panel = window, !AppPreferences.shared.mousePassthrough else { return }
+        guard let panel = window else { return }
         var frame = panel.frame
         frame.origin.x += dx
         frame.origin.y -= dy
@@ -151,13 +230,13 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     }
 
     private func snapAndSave() {
-        guard let panel = window else { return }
-        let screen = screenForPanel(panel)
+        guard let panel = window, let screen = screenForPanel(panel) else { return }
+        guard AppPreferences.shared.snapEnabled else { clampAndSave(); return }
         let visible = screen.visibleFrame
         var frame = panel.frame
         let threshold: CGFloat = 26
-        if abs(frame.minX - visible.minX) <= threshold { frame.origin.x = visible.minX; isLeftAttached = true }
-        if abs(frame.maxX - visible.maxX) <= threshold { frame.origin.x = visible.maxX - frame.width; isLeftAttached = false }
+        if abs(frame.minX - visible.minX) <= threshold { frame.origin.x = visible.minX }
+        if abs(frame.maxX - visible.maxX) <= threshold { frame.origin.x = visible.maxX - frame.width }
         if abs(frame.minY - visible.minY) <= threshold { frame.origin.y = visible.minY }
         if abs(frame.maxY - visible.maxY) <= threshold { frame.origin.y = visible.maxY - frame.height }
         panel.setFrame(frame, display: false)
@@ -165,20 +244,22 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         renderCurrentState()
     }
 
-    func clampAndSave() {
-        guard let panel = window else { return }
-        let screen = screenForPanel(panel)
-        let visible = screen.visibleFrame
-        var frame = panel.frame
-        frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - frame.width))
-        frame.origin.y = min(max(frame.origin.y, visible.minY), max(visible.minY, visible.maxY - frame.height))
-        panel.setFrame(frame, display: false)
-        isLeftAttached = abs(frame.minX - visible.minX) < 1
-        AppPreferences.shared.saveFrame(frame)
+    private func evaluate(_ script: String) {
+        guard hasLoaded else { return }
+        webView.evaluateJavaScript(script) { [weak self] _, error in
+            guard let self, let error else { return }
+            self.recordDebug("javascript failed: \(error.localizedDescription)")
+        }
     }
 
-    private func screenForPanel(_ panel: NSWindow) -> NSScreen {
-        NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) ?? NSScreen.main ?? NSScreen.screens[0]
+    private func recordDebug(_ event: String) {
+        debugEvents.append((Date(), event))
+        if debugEvents.count > 40 { debugEvents.removeFirst(debugEvents.count - 40) }
+    }
+
+    private func screenForPanel(_ panel: NSWindow, proposedFrame: CGRect? = nil) -> NSScreen? {
+        let frame = proposedFrame ?? panel.frame
+        return NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) }) ?? NSScreen.main ?? NSScreen.screens.first
     }
 }
 

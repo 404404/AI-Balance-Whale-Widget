@@ -5,34 +5,39 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>AI Balance Whale</title>
   <style>
-    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; --s: 1; }
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background: transparent; user-select: none; }
-    #app { position: relative; width: 248px; height: 410px; transform-origin: 50% 100%; pointer-events: none; }
-    #bubble { display: none; position: absolute; left: 2px; top: 2px; width: 244px; max-height: 228px; box-sizing: border-box; padding: 11px 12px 10px; border: 1px solid rgba(32,49,112,.2); border-radius: 16px; color: #203170; background: rgba(255,255,255,.97); box-shadow: 0 10px 26px rgba(22,34,81,.2); pointer-events: none; }
+    #app { position: relative; width: calc(248px * var(--s)); height: calc(410px * var(--s)); transform-origin: 50% 100%; pointer-events: none; }
+    #bubble { display: none; position: absolute; left: calc(2px * var(--s)); top: calc(2px * var(--s)); width: calc(244px * var(--s)); max-height: calc(228px * var(--s)); box-sizing: border-box; padding: calc(11px * var(--s)) calc(12px * var(--s)) calc(10px * var(--s)); border: 1px solid rgba(32,49,112,.2); border-radius: calc(16px * var(--s)); color: #203170; background: rgba(255,255,255,.97); box-shadow: 0 10px 26px rgba(22,34,81,.2); pointer-events: none; }
     #bubble.visible { display: block; pointer-events: auto; animation: bubble-in .18s ease both; }
     @keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-    #bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 16px; height: 16px; background: #fff; border-right: 1px solid rgba(32,49,112,.16); border-bottom: 1px solid rgba(32,49,112,.16); transform: translateX(-50%) rotate(45deg); }
-    #bubble-scroll { max-height: 176px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
-    #bubble-title { font-size: 13px; font-weight: 700; margin-bottom: 7px; }
-    #bubble-message { color: #65739c; font-size: 11px; line-height: 1.4; margin-bottom: 7px; }
-    #account { color: #203170; font-size: 11px; margin-bottom: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bucket { padding: 7px 8px; margin: 5px 0; border-radius: 10px; background: #f3f6fd; }
-    .bucket-head, .bucket-foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-    .bucket-name { font-size: 11px; font-weight: 650; }
-    .bucket-value { font-size: 11px; font-weight: 700; color: #3856a0; white-space: nowrap; }
-    .bucket-foot { color: #7280a5; font-size: 10px; margin-top: 3px; }
-    #last-updated { color: #8994b4; font-size: 10px; margin: 6px 0; }
+    #bubble::after { content: ""; position: absolute; left: 50%; bottom: calc(-9px * var(--s)); width: calc(16px * var(--s)); height: calc(16px * var(--s)); background: #fff; border-right: 1px solid rgba(32,49,112,.16); border-bottom: 1px solid rgba(32,49,112,.16); transform: translateX(-50%) rotate(45deg); }
+    #bubble-scroll { max-height: calc(176px * var(--s)); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+    #bubble-title { font-size: calc(13px * var(--s)); font-weight: 700; margin-bottom: calc(7px * var(--s)); }
+    #bubble-message { color: #65739c; font-size: calc(11px * var(--s)); line-height: 1.4; margin-bottom: calc(7px * var(--s)); }
+    #account { color: #203170; font-size: calc(11px * var(--s)); margin-bottom: calc(7px * var(--s)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bucket { padding: calc(7px * var(--s)) calc(8px * var(--s)); margin: calc(5px * var(--s)) 0; border-radius: calc(10px * var(--s)); background: #f3f6fd; }
+    .bucket-head, .bucket-foot { display: flex; justify-content: space-between; gap: calc(8px * var(--s)); align-items: baseline; }
+    .bucket-name { font-size: calc(11px * var(--s)); font-weight: 650; }
+    .bucket-value { font-size: calc(11px * var(--s)); font-weight: 700; color: #3856a0; white-space: nowrap; }
+    .bucket-foot { color: #7280a5; font-size: calc(10px * var(--s)); margin-top: calc(3px * var(--s)); }
+    #last-updated { color: #8994b4; font-size: calc(10px * var(--s)); margin: calc(6px * var(--s)) 0; }
     button { font: inherit; cursor: pointer; }
-    #refresh { position: relative; z-index: 1; width: 100%; border: 0; border-radius: 8px; color: #fff; background: #203170; padding: 6px 8px; pointer-events: auto; }
+    #refresh { position: relative; z-index: 1; width: 100%; border: 0; border-radius: calc(8px * var(--s)); color: #fff; background: #203170; padding: calc(6px * var(--s)) calc(8px * var(--s)); pointer-events: auto; font-size: calc(11px * var(--s)); }
     #refresh:hover { background: #2f4488; }
-    #whale-area { position: absolute; left: 0; bottom: 0; width: 248px; height: 176px; pointer-events: none; }
-    #whale { position: absolute; left: 32px; bottom: 7px; width: 184px; height: 164px; object-fit: contain; filter: drop-shadow(0 8px 7px rgba(24,39,92,.17)); pointer-events: auto; cursor: grab; touch-action: none; -webkit-user-drag: none; user-select: none; transform-origin: 50% 100%; transition: transform .12s ease; }
+    #whale-area { position: absolute; left: 0; bottom: 0; width: calc(248px * var(--s)); height: calc(176px * var(--s)); pointer-events: none; }
+    #whale { position: absolute; left: calc(32px * var(--s)); bottom: calc(7px * var(--s)); width: calc(184px * var(--s)); height: calc(164px * var(--s)); object-fit: contain; filter: drop-shadow(0 8px 7px rgba(24,39,92,.17)); pointer-events: auto; cursor: grab; touch-action: none; -webkit-user-drag: none; user-select: none; transform-origin: 50% 100%; transition: transform .12s ease; }
     #whale.pressed { transform: scale(.94, .9); cursor: grabbing; }
     #whale.flip { transform: scaleX(-1); }
     #whale.flip.pressed { transform: scale(-.94, .9); }
-    #menu { position: absolute; right: 7px; bottom: 62px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(32,49,112,.18); background: rgba(255,255,255,.94); color: #203170; box-shadow: 0 3px 10px rgba(22,34,81,.16); pointer-events: auto; z-index: 2; }
+    #menu { position: absolute; right: calc(7px * var(--s)); bottom: calc(62px * var(--s)); width: calc(28px * var(--s)); height: calc(28px * var(--s)); border-radius: 50%; border: 1px solid rgba(32,49,112,.18); background: rgba(255,255,255,.94); color: #203170; box-shadow: 0 3px 10px rgba(22,34,81,.16); pointer-events: auto; z-index: 2; font-size: calc(14px * var(--s)); }
     #menu:hover { background: #edf2ff; }
-    #hint { position: absolute; bottom: -1px; left: 0; width: 100%; text-align: center; color: rgba(32,49,112,.58); font-size: 10px; pointer-events: none; }
+    #hint { position: absolute; bottom: -1px; left: 0; width: 100%; text-align: center; color: rgba(32,49,112,.58); font-size: calc(10px * var(--s)); pointer-events: none; }
+    #context-menu { display: none; position: fixed; z-index: 20; min-width: 174px; padding: 6px; border: 1px solid rgba(32,49,112,.16); border-radius: 12px; background: rgba(255,255,255,.98); box-shadow: 0 12px 30px rgba(22,34,81,.24); pointer-events: auto; }
+    #context-menu.visible { display: block; }
+    #context-menu button { display: block; width: 100%; border: 0; border-radius: 8px; padding: 7px 9px; background: transparent; color: #203170; text-align: left; font-size: 12px; }
+    #context-menu button:hover { background: #edf2ff; }
+    #context-menu .separator { height: 1px; margin: 5px 2px; background: rgba(32,49,112,.12); }
     .ready #bubble-title::before { content: "● "; color: #36a269; }
     .stale #bubble-title::before { content: "● "; color: #d58a2a; }
     .error #bubble-title::before, .offline #bubble-title::before, .notLoggedIn #bubble-title::before { content: "● "; color: #c65353; }
@@ -44,8 +49,10 @@
       <div id="bubble-title">AI Balance Whale</div>
       <div id="bubble-scroll">
         <div id="bubble-message">正在等待 Codex 额度…</div>
+        <div id="custom-content"></div>
         <div id="account" hidden></div>
         <div id="buckets"></div>
+        <div id="vendors"></div>
         <div id="last-updated" hidden></div>
       </div>
       <button id="refresh" type="button">刷新额度</button>
@@ -56,29 +63,31 @@
       <div id="hint">点击查看额度 · 拖动移动</div>
     </div>
   </main>
+  <nav id="context-menu" aria-label="小鲸鱼菜单">
+    <button data-action="toggle">显示 / 隐藏气泡</button>
+    <button data-action="refresh">刷新额度</button>
+    <div class="separator"></div>
+    <button data-page="general">通用与桌面设置…</button>
+    <button data-page="models">模型与账户设置…</button>
+    <button data-page="resources">角色与图片…</button>
+    <button data-page="bubbles">气泡与内容…</button>
+    <button data-page="sounds">音效…</button>
+    <button data-action="restore">恢复人偶位置和大小</button>
+  </nav>
   <script>
     (function () {
       "use strict";
-      var app = document.getElementById("app");
-      var bubble = document.getElementById("bubble");
-      var whale = document.getElementById("whale");
-      var menu = document.getElementById("menu");
-      var refreshButton = document.getElementById("refresh");
-      var defaults = { soundEnabled: true, scale: 1, flip: false, status: "idle", buckets: [], email: null, planType: null, lastUpdated: null, message: "等待查询 Codex 额度" };
-      var state = Object.assign({}, defaults);
-      var pointer = null;
-      var countdownTimer = null;
-      var expiryNotified = {};
-      var pressSound = new Audio("Ya1.mp3");
-      var releaseSound = new Audio("Ya2.mp3");
-      pressSound.volume = .45;
-      releaseSound.volume = .45;
+      var app = document.getElementById("app"), bubble = document.getElementById("bubble");
+      var whale = document.getElementById("whale"), menu = document.getElementById("menu");
+      var refreshButton = document.getElementById("refresh"), contextMenu = document.getElementById("context-menu");
+      var defaults = { soundEnabled: true, scale: 1, flip: false, status: "idle", buckets: [], email: null, planType: null, lastUpdated: null, message: "等待查询 Codex 额度", showMenuButton: true, bubbleCloseAfterSeconds: 0, roleImage: "DSniang1.png", pressSound: "Ya1.mp3", releaseSound: "Ya2.mp3", soundVolume: .45, bubbleSteps: [] };
+      var state = Object.assign({}, defaults), pointer = null, closeTimer = null, expiryNotified = {};
+      var pressSound = new Audio("Ya1.mp3"), releaseSound = new Audio("Ya2.mp3");
+      pressSound.volume = .45; releaseSound.volume = .45;
 
       function post(type, payload) {
         var message = Object.assign({ type: type }, payload || {});
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) {
-          window.webkit.messageHandlers.bridge.postMessage(message);
-        }
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) window.webkit.messageHandlers.bridge.postMessage(message);
       }
       function formatDate(value) {
         if (!value) return "";
@@ -87,7 +96,7 @@
       function countdown(timestamp) {
         if (!timestamp) return "等待重置时间";
         var seconds = Math.max(0, Math.floor((timestamp - Date.now()) / 1000));
-        if (seconds === 0) return "等待重新查询";
+        if (!seconds) return "等待重新查询";
         var days = Math.floor(seconds / 86400); seconds %= 86400;
         var hours = Math.floor(seconds / 3600); seconds %= 3600;
         var minutes = Math.floor(seconds / 60); seconds %= 60;
@@ -95,28 +104,48 @@
         if (hours) return hours + "小时" + minutes + "分后重置";
         return minutes + "分" + seconds + "秒后重置";
       }
-      function setBubbleVisible(visible) { bubble.classList.toggle("visible", !!visible); }
+      function setBubbleVisible(visible) {
+        bubble.classList.toggle("visible", !!visible);
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        var seconds = Number(state.bubbleCloseAfterSeconds) || 0;
+        if (visible && seconds > 0) closeTimer = setTimeout(function () { setBubbleVisible(false); }, seconds * 1000);
+      }
+      function hideContextMenu() { contextMenu.classList.remove("visible"); }
       function render() {
         var status = state.status || "idle";
         app.className = status;
-        app.style.transform = "scale(" + (Number(state.scale) || 1) + ")";
+        document.documentElement.style.setProperty("--s", String(Math.max(.65, Math.min(1.6, Number(state.scale) || 1))));
         whale.classList.toggle("flip", !!state.flip);
-        var title = document.getElementById("bubble-title");
-        var message = document.getElementById("bubble-message");
-        var account = document.getElementById("account");
-        var buckets = document.getElementById("buckets");
+        menu.style.display = state.showMenuButton === false ? "none" : "block";
+        var title = document.getElementById("bubble-title"), message = document.getElementById("bubble-message"), custom = document.getElementById("custom-content"), vendors = document.getElementById("vendors");
+        whale.src = state.roleImage || "DSniang1.png";
+        pressSound.src = state.pressSound || "Ya1.mp3"; releaseSound.src = state.releaseSound || "Ya2.mp3";
+        pressSound.volume = Number(state.soundVolume == null ? .45 : state.soundVolume); releaseSound.volume = pressSound.volume;
+        custom.innerHTML = "";
+        (Array.isArray(state.bubbleSteps) ? state.bubbleSteps : []).forEach(function (step) {
+          if (!step || step.kind === "status") return;
+          var item = document.createElement("div"); item.textContent = step.text || ""; item.style.cssText = "font-size:11px;line-height:1.4;margin:4px 0;color:#526492;"; custom.appendChild(item);
+        });
+        var account = document.getElementById("account"), buckets = document.getElementById("buckets");
         var updated = document.getElementById("last-updated");
         title.textContent = status === "ready" ? "Codex 订阅额度" : status === "stale" ? "Codex 额度（缓存）" : "AI Balance Whale";
         message.textContent = state.message || "暂无状态";
         account.hidden = !state.email && !state.planType;
         account.textContent = [state.email, state.planType].filter(Boolean).join(" · ");
-        buckets.innerHTML = "";
+        buckets.innerHTML = ""; vendors.innerHTML = "";
+        (Array.isArray(state.vendors) ? state.vendors : []).forEach(function (vendor) {
+          var row = document.createElement("div"); row.className = "bucket";
+          var head = document.createElement("div"); head.className = "bucket-head";
+          var name = document.createElement("span"); name.className = "bucket-name"; name.textContent = vendor.name || "厂商";
+          var value = document.createElement("span"); value.className = "bucket-value"; value.textContent = vendor.remaining == null ? (vendor.status === "ready" ? "数据不可用" : "未配置") : ("剩余 " + Number(vendor.remaining).toFixed(2) + " " + (vendor.currency || ""));
+          head.appendChild(name); head.appendChild(value); row.appendChild(head);
+          var foot = document.createElement("div"); foot.className = "bucket-foot"; foot.textContent = vendor.message || ""; row.appendChild(foot); vendors.appendChild(row);
+        });
         (Array.isArray(state.buckets) ? state.buckets : []).forEach(function (item) {
           var row = document.createElement("div"); row.className = "bucket";
           var head = document.createElement("div"); head.className = "bucket-head";
           var name = document.createElement("span"); name.className = "bucket-name"; name.textContent = (item.name || "额度") + " · " + (item.windowName || "额度窗口");
-          var value = document.createElement("span"); value.className = "bucket-value";
-          value.textContent = item.remainingPercent == null ? "数据不可用" : ("剩余 " + Math.round(item.remainingPercent) + "%");
+          var value = document.createElement("span"); value.className = "bucket-value"; value.textContent = item.remainingPercent == null ? "数据不可用" : ("剩余 " + Math.round(item.remainingPercent) + "%");
           head.appendChild(name); head.appendChild(value);
           var foot = document.createElement("div"); foot.className = "bucket-foot";
           var used = document.createElement("span"); used.textContent = item.usedPercent == null ? "已用：未知" : ("已用 " + Math.round(item.usedPercent) + "%");
@@ -128,28 +157,51 @@
       }
       function updateCountdowns() {
         document.querySelectorAll("[data-reset]").forEach(function (el) {
-          var timestamp = Number(el.dataset.reset) || 0;
-          el.textContent = countdown(timestamp);
-          if (timestamp && timestamp <= Date.now() && !expiryNotified[timestamp]) {
-            expiryNotified[timestamp] = true;
-            post("refresh");
-          }
+          var timestamp = Number(el.dataset.reset) || 0; el.textContent = countdown(timestamp);
+          if (timestamp && timestamp <= Date.now() && !expiryNotified[timestamp]) { expiryNotified[timestamp] = true; post("refresh"); }
         });
       }
       function endPointer(event, cancelled) {
         if (!pointer) return;
         var current = pointer; pointer = null; whale.classList.remove("pressed");
         if (event && whale.hasPointerCapture && whale.hasPointerCapture(current.id)) whale.releasePointerCapture(current.id);
-        if (state.soundEnabled && !cancelled) { releaseSound.currentTime = 0; releaseSound.play().catch(function () {}); }
+        if (!cancelled && state.soundEnabled) { releaseSound.currentTime = 0; releaseSound.play().catch(function () {}); }
         post("dragEnd", { moved: current.moved });
         if (!cancelled && !current.moved) { setBubbleVisible(!bubble.classList.contains("visible")); post("refresh"); }
       }
-      window.__AIWhale = { update: function (next) { state = Object.assign({}, defaults, next || {}); render(); updateCountdowns(); } };
+      window.__AIWhale = {
+        update: function (next) {
+          var wasVisible = bubble.classList.contains("visible");
+          state = Object.assign({}, defaults, next || {});
+          render();
+          if (wasVisible) setBubbleVisible(true);
+          updateCountdowns();
+        },
+        setLayout: function (layout) {
+          if (layout && layout.scale) { document.documentElement.style.setProperty("--s", String(layout.scale)); }
+        },
+        toggleBubble: function () { setBubbleVisible(!bubble.classList.contains("visible")); },
+      };
       whale.addEventListener("dragstart", function (event) { event.preventDefault(); });
+      whale.addEventListener("contextmenu", function (event) {
+        event.preventDefault(); event.stopPropagation(); hideContextMenu();
+        var x = Math.max(4, Math.min(window.innerWidth - 186, event.clientX)), y = Math.max(4, Math.min(window.innerHeight - 260, event.clientY));
+        contextMenu.style.left = x + "px"; contextMenu.style.top = y + "px"; contextMenu.classList.add("visible");
+      });
+      document.addEventListener("pointerdown", function (event) { if (!contextMenu.contains(event.target) && event.target !== whale) hideContextMenu(); });
+      contextMenu.addEventListener("click", function (event) {
+        var item = event.target.closest("button"); if (!item) return;
+        hideContextMenu();
+        var action = item.dataset.action, page = item.dataset.page;
+        if (page) post("openSettings", { page: page });
+        else if (action === "toggle") setBubbleVisible(!bubble.classList.contains("visible"));
+        else if (action === "refresh") post("refresh");
+        else if (action === "restore") post("restoreLayout");
+      });
       whale.addEventListener("pointerdown", function (event) {
         if (event.button !== 0 || pointer) return;
-        event.preventDefault();
-        pointer = { id: event.pointerId, startX: event.screenX, startY: event.screenY, lastX: event.screenX, lastY: event.screenY, moved: false };
+        event.preventDefault(); hideContextMenu();
+        pointer = { id: event.pointerId, startX: event.screenX, startY: event.screenY, lastX: event.screenX, lastY: event.screenY, moved: false, captureLost: false };
         try { whale.setPointerCapture(event.pointerId); } catch (e) {}
         whale.classList.add("pressed");
         if (state.soundEnabled) { pressSound.currentTime = 0; pressSound.play().catch(function () {}); }
@@ -164,14 +216,15 @@
       });
       whale.addEventListener("pointerup", function (event) { if (pointer && pointer.id === event.pointerId) endPointer(event, false); });
       whale.addEventListener("pointercancel", function (event) { if (pointer && pointer.id === event.pointerId) endPointer(event, true); });
-      whale.addEventListener("lostpointercapture", function () { if (pointer) endPointer(null, true); });
+      whale.addEventListener("lostpointercapture", function () {
+        if (!pointer) return;
+        pointer.captureLost = true;
+        setTimeout(function () { if (pointer && pointer.captureLost) endPointer(null, true); }, 150);
+      });
       window.addEventListener("blur", function () { if (pointer) endPointer(null, true); });
       refreshButton.addEventListener("click", function () { setBubbleVisible(true); post("refresh"); });
-      menu.addEventListener("click", function () { post("openSettings"); });
-      render();
-      setBubbleVisible(false);
-      countdownTimer = setInterval(updateCountdowns, 1000);
-      post("ready");
+      menu.addEventListener("click", function () { post("openSettings", { page: "general" }); });
+      render(); setBubbleVisible(false); setInterval(updateCountdowns, 1000); post("ready");
     }());
   </script>
 </body>
