@@ -203,6 +203,6 @@ final class WhaleConfigurationStore {
             "reminders": ["enabled": false, "threshold": 20, "budget": NSNull()],
             "records": ["source": "未连接事件来源", "items": []],
             "resources": ["roles": [["id": "builtin-dsniang", "name": "DS娘（默认）", "relativePath": "DSniang1.png", "mime": "image/png", "builtin": true]], "bubbles": [["id": "builtin-money", "name": "金币", "relativePath": "bubble-money1.gif", "mime": "image/gif", "builtin": true], ["id": "builtin-petpet", "name": "Petpet", "relativePath": "bubble-petpet.gif", "mime": "image/gif", "builtin": true]], "audio": [["id": "builtin-press", "name": "按下", "relativePath": "Ya1.mp3", "mime": "audio/mpeg", "builtin": true], ["id": "builtin-release", "name": "松开", "relativePath": "Ya2.mp3", "mime": "audio/mpeg", "builtin": true]],
-        ]
+        ]]
     }
 }
