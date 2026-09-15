@@ -128,7 +128,9 @@ jobs:
           xcrun stapler staple "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
           xcrun stapler validate "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
       - name: Recompute DMG checksum after signing
-        run: shasum -a 256 "MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg" > MacOSApp/dist/SHA256SUMS
+        run: |
+          cd MacOSApp/dist
+          shasum -a 256 "AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg" > SHA256SUMS
       - name: Verify release source and assets
         run: |
           set -euo pipefail
