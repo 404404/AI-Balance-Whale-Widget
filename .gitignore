@@ -21,6 +21,9 @@ sessions/
 
 # 依赖与临时物
 node_modules/
+.build/
+MacOSApp/.build/
+MacOSApp/dist/
 *.zip
 *.log
 *.bak

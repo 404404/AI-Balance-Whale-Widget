@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Balance Whale</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: visible; background: transparent; user-select: none; }
+    #app { position: relative; width: 248px; min-height: 250px; transform-origin: 50% 100%; pointer-events: none; }
+    #bubble { position: absolute; left: 2px; top: 0; width: 244px; box-sizing: border-box; padding: 11px 12px 10px; border: 1px solid rgba(32,49,112,.2); border-radius: 16px; color: #203170; background: rgba(255,255,255,.97); box-shadow: 0 10px 26px rgba(22,34,81,.2); pointer-events: auto; opacity: 0; transform: translateY(8px) scale(.96); transition: opacity .18s ease, transform .18s ease; }
+    #bubble.visible { opacity: 1; transform: translateY(0) scale(1); }
+    #bubble-title { font-size: 13px; font-weight: 700; margin-bottom: 7px; }
+    #bubble-message { color: #65739c; font-size: 11px; line-height: 1.4; margin-bottom: 7px; }
+    #account { color: #203170; font-size: 11px; margin-bottom: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bucket { padding: 7px 8px; margin: 5px 0; border-radius: 10px; background: #f3f6fd; }
+    .bucket-head, .bucket-foot { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .bucket-name { font-size: 11px; font-weight: 650; }
+    .bucket-value { font-size: 11px; font-weight: 700; color: #3856a0; white-space: nowrap; }
+    .bucket-foot { color: #7280a5; font-size: 10px; margin-top: 3px; }
+    #last-updated { color: #8994b4; font-size: 10px; margin: 6px 0; }
+    button { font: inherit; cursor: pointer; }
+    #refresh { width: 100%; border: 0; border-radius: 8px; color: #fff; background: #203170; padding: 6px 8px; pointer-events: auto; }
+    #refresh:hover { background: #2f4488; }
+    #whale-area { position: relative; width: 248px; height: 205px; margin-top: 24px; pointer-events: none; }
+    #whale { position: absolute; left: 25px; bottom: 4px; width: 198px; max-height: 198px; object-fit: contain; filter: drop-shadow(0 8px 7px rgba(24,39,92,.17)); pointer-events: auto; cursor: grab; transform-origin: 50% 100%; transition: transform .12s ease; }
+    #whale.pressed { transform: scale(.94, .9); cursor: grabbing; }
+    #whale.flip { transform: scaleX(-1); }
+    #whale.flip.pressed { transform: scale(-.94, .9); }
+    #menu { position: absolute; right: 8px; bottom: 56px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(32,49,112,.18); background: rgba(255,255,255,.94); color: #203170; box-shadow: 0 3px 10px rgba(22,34,81,.16); pointer-events: auto; z-index: 2; }
+    #menu:hover { background: #edf2ff; }
+    #hint { position: absolute; bottom: -4px; left: 0; width: 100%; text-align: center; color: rgba(32,49,112,.58); font-size: 10px; pointer-events: none; }
+    .ready #bubble-title::before { content: "● "; color: #36a269; }
+    .stale #bubble-title::before { content: "● "; color: #d58a2a; }
+    .error #bubble-title::before { content: "● "; color: #c65353; }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <section id="bubble" aria-live="polite">
+      <div id="bubble-title">AI Balance Whale</div>
+      <div id="bubble-message">正在等待 Codex 额度…</div>
+      <div id="account" hidden></div>
+      <div id="buckets"></div>
+      <div id="last-updated" hidden></div>
+      <button id="refresh" type="button">刷新额度</button>
+    </section>
+    <div id="whale-area">
+      <button id="menu" type="button" aria-label="打开设置">⚙</button>
+      <img id="whale" src="DSniang1.png" alt="小鲸鱼">
+      <div id="hint">点击查看额度 · 拖动移动</div>
+    </div>
+  </main>
+  <script>
+    (function () {
+      "use strict";
+      var app = document.getElementById("app");
+      var bubble = document.getElementById("bubble");
+      var whale = document.getElementById("whale");
+      var menu = document.getElementById("menu");
+      var refreshButton = document.getElementById("refresh");
+      var state = { soundEnabled: true, scale: 1, flip: false, status: "idle", buckets: [] };
+      var pointer = null;
+      var countdownTimer = null;
+      var pressSound = new Audio("Ya1.mp3");
+      var releaseSound = new Audio("Ya2.mp3");
+      pressSound.volume = .45;
+      releaseSound.volume = .45;
+
+      function post(type, payload) {
+        var message = Object.assign({ type: type }, payload || {});
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) {
+          window.webkit.messageHandlers.bridge.postMessage(message);
+        }
+      }
+      function formatDate(value) {
+        if (!value) return "";
+        try { return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); } catch (e) { return ""; }
+      }
+      function countdown(timestamp) {
+        if (!timestamp) return "等待重置时间";
+        var seconds = Math.max(0, Math.floor((timestamp - Date.now()) / 1000));
+        var days = Math.floor(seconds / 86400); seconds %= 86400;
+        var hours = Math.floor(seconds / 3600); seconds %= 3600;
+        var minutes = Math.floor(seconds / 60); seconds %= 60;
+        if (days) return days + "天" + hours + "小时后重置";
+        if (hours) return hours + "小时" + minutes + "分后重置";
+        return minutes + "分" + seconds + "秒后重置";
+      }
+      function render() {
+        var status = state.status || "idle";
+        app.className = status;
+        app.style.transform = "scale(" + (Number(state.scale) || 1) + ")";
+        whale.classList.toggle("flip", !!state.flip);
+        var title = document.getElementById("bubble-title");
+        var message = document.getElementById("bubble-message");
+        var account = document.getElementById("account");
+        var buckets = document.getElementById("buckets");
+        var updated = document.getElementById("last-updated");
+        title.textContent = status === "ready" ? "Codex 订阅额度" : status === "stale" ? "Codex 额度（缓存）" : "AI Balance Whale";
+        message.textContent = state.message || "暂无状态";
+        account.hidden = !state.email && !state.planType;
+        account.textContent = [state.email, state.planType].filter(Boolean).join(" · ");
+        buckets.innerHTML = "";
+        (state.buckets || []).forEach(function (item) {
+          var row = document.createElement("div");
+          row.className = "bucket";
+          var head = document.createElement("div"); head.className = "bucket-head";
+          var name = document.createElement("span"); name.className = "bucket-name"; name.textContent = (item.name || (item.window === "primary" ? "主额度" : "次额度")) + " · " + (item.windowName || "额度窗口");
+          var value = document.createElement("span"); value.className = "bucket-value";
+          value.textContent = item.remainingPercent == null ? "数据不可用" : ("剩余 " + Math.round(item.remainingPercent) + "%");
+          head.appendChild(name); head.appendChild(value);
+          var foot = document.createElement("div"); foot.className = "bucket-foot";
+          var used = document.createElement("span"); used.textContent = item.usedPercent == null ? "已用：未知" : ("已用 " + Math.round(item.usedPercent) + "%");
+          var reset = document.createElement("span"); reset.dataset.reset = item.resetsAt || ""; reset.textContent = countdown(item.resetsAt);
+          foot.appendChild(used); foot.appendChild(reset); row.appendChild(head); row.appendChild(foot); buckets.appendChild(row);
+        });
+        updated.hidden = !state.lastUpdated;
+        updated.textContent = state.lastUpdated ? "最后成功更新：" + formatDate(state.lastUpdated) : "";
+      }
+      function updateCountdowns() {
+        document.querySelectorAll("[data-reset]").forEach(function (el) { el.textContent = countdown(Number(el.dataset.reset) || 0); });
+      }
+      window.__AIWhale = { update: function (next) { state = Object.assign({}, state, next || {}); render(); updateCountdowns(); } };
+      setInterval(updateCountdowns, 1000);
+      whale.addEventListener("pointerdown", function (event) {
+        if (event.button !== 0) return;
+        pointer = { id: event.pointerId, x: event.screenX, y: event.screenY, moved: false };
+        whale.setPointerCapture(event.pointerId);
+        whale.classList.add("pressed");
+        if (state.soundEnabled) { pressSound.currentTime = 0; pressSound.play().catch(function () {}); }
+        post("dragStart");
+      });
+      whale.addEventListener("pointermove", function (event) {
+        if (!pointer || pointer.id !== event.pointerId) return;
+        var dx = event.screenX - pointer.x, dy = event.screenY - pointer.y;
+        if (Math.abs(dx) + Math.abs(dy) > 4) pointer.moved = true;
+        if (pointer.moved) post("dragMove", { dx: dx, dy: dy });
+        pointer.x = event.screenX; pointer.y = event.screenY;
+      });
+      whale.addEventListener("pointerup", function (event) {
+        if (!pointer || pointer.id !== event.pointerId) return;
+        var moved = pointer.moved; pointer = null; whale.classList.remove("pressed");
+        if (state.soundEnabled) { releaseSound.currentTime = 0; releaseSound.play().catch(function () {}); }
+        post("dragEnd", { moved: moved });
+        if (!moved) { bubble.classList.toggle("visible"); post("refresh"); }
+      });
+      whale.addEventListener("pointercancel", function () { pointer = null; whale.classList.remove("pressed"); post("dragEnd", { moved: true }); });
+      refreshButton.addEventListener("click", function () { bubble.classList.add("visible"); post("refresh"); });
+      menu.addEventListener("click", function () { post("openSettings"); });
+      render();
+      post("ready");
+    }());
+  </script>
+</body>
+</html>
