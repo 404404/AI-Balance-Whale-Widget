@@ -1,131 +1,247 @@
 import Cocoa
+import WebKit
 import ServiceManagement
 import UniformTypeIdentifiers
 
-final class SettingsWindowController: NSWindowController {
-    var onSaved: (() -> Void)?
-    private let codexPathField = NSTextField(string: "")
-    private let codexHomeField = NSTextField(string: "")
-    private let scaleField = NSSlider(value: 1, minValue: 0.65, maxValue: 1.6, target: nil, action: nil)
-    private let soundCheckbox = NSButton(checkboxWithTitle: "启用按压音效", target: nil, action: nil)
-    private let topCheckbox = NSButton(checkboxWithTitle: "置顶（只覆盖普通窗口）", target: nil, action: nil)
-    private let spacesCheckbox = NSButton(checkboxWithTitle: "跨桌面显示，并辅助全屏应用", target: nil, action: nil)
-    private let passthroughCheckbox = NSButton(checkboxWithTitle: "空白时鼠标穿透（从菜单栏恢复）", target: nil, action: nil)
-    private let loginCheckbox = NSButton(checkboxWithTitle: "登录时启动（默认关闭）", target: nil, action: nil)
-    private let codexStatusLabel = NSTextField(labelWithString: "")
+final class SettingsWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate {
+    var onAppearanceChanged: (() -> Void)?
+    var onConnectionChanged: (() -> Void)?
+    var onTestConnection: (() -> Void)?
+    var onResetLayout: (() -> Void)?
+    var connectionState: (() -> ProviderState)?
+
+    private let webView: WKWebView
+    private var ready = false
+    private var requestedPage = "general"
 
     init() {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 430))
-        let window = NSWindow(contentRect: view.frame, styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let controller = WKUserContentController()
+        configuration.userContentController = controller
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.setValue(false, forKey: "drawsBackground")
+        webView = view
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: 680),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
         window.title = "AI Balance Whale 设置"
+        window.minSize = NSSize(width: 680, height: 500)
+        window.isReleasedWhenClosed = false
         window.contentView = view
         super.init(window: window)
-        buildView(view)
-        loadValues()
+
+        view.autoresizingMask = [.width, .height]
+        controller.add(self, name: "settings")
+        view.navigationDelegate = self
+        load()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    private func buildView(_ view: NSView) {
-        func label(_ text: String, _ frame: NSRect, size: CGFloat = 13) -> NSTextField {
-            let field = NSTextField(labelWithString: text)
-            field.frame = frame; field.font = .systemFont(ofSize: size); field.textColor = .labelColor
-            view.addSubview(field); return field
-        }
-        func button(_ title: String, _ frame: NSRect, _ action: Selector) -> NSButton {
-            let item = NSButton(title: title, target: self, action: action)
-            item.frame = frame; item.bezelStyle = .rounded; view.addSubview(item); return item
-        }
-
-        label("Codex 额度来自本机 codex app-server，只读取账号与 rate limits，不会读取或记录 token。", NSRect(x: 24, y: 382, width: 512, height: 28), size: 12)
-        label("codex 可执行文件", NSRect(x: 24, y: 333, width: 150, height: 22))
-        codexPathField.frame = NSRect(x: 170, y: 330, width: 300, height: 26); view.addSubview(codexPathField)
-        button("选择…", NSRect(x: 478, y: 330, width: 58, height: 26), #selector(chooseCodex))
-        label("CODEX_HOME（可留空，默认 ~/.codex）", NSRect(x: 24, y: 291, width: 250, height: 22))
-        codexHomeField.frame = NSRect(x: 274, y: 288, width: 262, height: 26); view.addSubview(codexHomeField)
-        codexStatusLabel.frame = NSRect(x: 24, y: 260, width: 512, height: 18)
-        codexStatusLabel.font = .systemFont(ofSize: 11)
-        codexStatusLabel.textColor = .secondaryLabelColor
-        view.addSubview(codexStatusLabel)
-        label("显示与系统", NSRect(x: 24, y: 236, width: 200, height: 22), size: 14).font = .boldSystemFont(ofSize: 14)
-        let checks = [soundCheckbox, topCheckbox, spacesCheckbox, passthroughCheckbox, loginCheckbox]
-        for (index, checkbox) in checks.enumerated() {
-            checkbox.target = self; checkbox.action = #selector(checkChanged(_:)); checkbox.frame = NSRect(x: 28, y: 192 - CGFloat(index) * 30, width: 400, height: 24); view.addSubview(checkbox)
-        }
-        label("鲸鱼大小", NSRect(x: 24, y: 50, width: 90, height: 22))
-        scaleField.frame = NSRect(x: 114, y: 51, width: 250, height: 22); scaleField.target = self; scaleField.action = #selector(scaleChanged(_:)); view.addSubview(scaleField)
-        button("保存", NSRect(x: 388, y: 22, width: 70, height: 30), #selector(save))
-        button("刷新额度", NSRect(x: 466, y: 22, width: 70, height: 30), #selector(refresh))
-        button("帮助", NSRect(x: 24, y: 22, width: 70, height: 30), #selector(openHelp))
-        button("问题反馈", NSRect(x: 102, y: 22, width: 86, height: 30), #selector(openFeedback))
-        label("首版只支持 Codex ChatGPT 登录订阅额度；API Key、无登录、离线与不兼容版本会明确提示。", NSRect(x: 24, y: 4, width: 340, height: 22), size: 10).textColor = .secondaryLabelColor
-    }
-
-    private func loadValues() {
-        let preferences = AppPreferences.shared
-        codexPathField.stringValue = preferences.codexPath
-        codexHomeField.stringValue = preferences.codexHome
-        updateCodexStatus()
-        scaleField.doubleValue = preferences.scale
-        soundCheckbox.state = preferences.soundEnabled ? .on : .off
-        topCheckbox.state = preferences.alwaysOnTop ? .on : .off
-        spacesCheckbox.state = preferences.allSpaces ? .on : .off
-        passthroughCheckbox.state = preferences.mousePassthrough ? .on : .off
-        loginCheckbox.state = preferences.launchAtLogin ? .on : .off
-    }
-
-    @objc private func chooseCodex() {
-        let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.unixExecutable]
-        if panel.runModal() == .OK, let url = panel.url { codexPathField.stringValue = url.path; updateCodexStatus() }
-    }
-
-    private func updateCodexStatus() {
-        let configured = codexPathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let executable = CodexLocator.executable(configuredPath: configured) else {
-            codexStatusLabel.stringValue = configured.isEmpty ? "自动探测：未找到可执行的 codex" : "手动路径不可执行：\(configured)"
+    func load() {
+        guard let url = Bundle.main.url(forResource: "Settings", withExtension: "html") else {
+            webView.loadHTMLString("<html><body>缺少 Settings.html</body></html>", baseURL: nil)
             return
         }
-        codexStatusLabel.stringValue = "当前 CLI：\(executable.path) · 版本探测中…"
-        CodexLocator.version(at: executable) { [weak self] version in
-            guard let self else { return }
-            self.codexStatusLabel.stringValue = "当前 CLI：\(executable.path) · \(version ?? "版本未知或无法运行")"
+        webView.loadFileURL(url, allowingReadAccessTo: Bundle.main.resourceURL ?? url.deletingLastPathComponent())
+    }
+
+    func refreshConnectionState() { sendPayload() }
+
+    func show(page: String = "general") {
+        requestedPage = page
+        window?.center()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        if ready { sendPageSelection() }
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "settings",
+              let body = message.body as? [String: Any],
+              let type = body["type"] as? String else { return }
+
+        switch type {
+        case "ready":
+            ready = true
+            sendPayload()
+            sendPageSelection()
+        case "saveConfig":
+            guard let config = body["config"] as? [String: Any] else { return }
+            WhaleConfigurationStore.shared.save(config)
+            applyConfiguration(config)
+            onAppearanceChanged?()
+            sendPayload()
+        case "previewAppearance":
+            guard let config = body["config"] as? [String: Any] else { return }
+            applyConfiguration(config)
+            onAppearanceChanged?()
+        case "saveConnection":
+            let path = (body["path"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let home = (body["home"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let preferences = AppPreferences.shared
+            let changed = preferences.codexPath != path || preferences.codexHome != home
+            preferences.codexPath = path
+            preferences.codexHome = home
+            if changed { onConnectionChanged?() }
+            sendPayload()
+        case "testConnection":
+            onTestConnection?()
+        case "resetLayout":
+            WhaleConfigurationStore.shared.resetLayout()
+            onResetLayout?()
+            sendPayload()
+        case "saveCredential":
+            guard let reference = body["reference"] as? String,
+                  let value = body["value"] as? String else { return }
+            _ = WhaleConfigurationStore.shared.saveCredential(reference: reference, value: value)
+            sendPayload()
+        case "importResource":
+            guard let kind = body["kind"] as? String,
+                  let name = body["name"] as? String,
+                  let base64 = body["base64"] as? String else { return }
+            _ = WhaleConfigurationStore.shared.importResource(kind: kind, name: name, base64: base64)
+            sendPayload()
+        case "deleteResource":
+            guard let kind = body["kind"] as? String, let id = body["id"] as? String else { return }
+            _ = WhaleConfigurationStore.shared.deleteResource(kind: kind, id: id)
+            sendPayload()
+        case "previewResource":
+            guard let kind = body["kind"] as? String, let id = body["id"] as? String else { return }
+            let dataURL = WhaleConfigurationStore.shared.resourceDataURL(kind: kind, id: id)
+            sendJavaScript("window.__AIWhaleSettings && window.__AIWhaleSettings.preview(\(json(dataURL ?? "")))")
+        case "backupConfig":
+            guard let url = WhaleConfigurationStore.shared.backupConfiguration() else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        case "restoreConfig":
+            restoreConfiguration()
+        case "openExternal":
+            guard let raw = body["url"] as? String, let url = URL(string: raw),
+                  url.scheme == "https", ["github.com"].contains(url.host?.lowercased() ?? "") else { return }
+            NSWorkspace.shared.open(url)
+        default:
+            break
         }
     }
 
-    @objc private func checkChanged(_ sender: NSButton) {
-        if sender === loginCheckbox { updateLoginItem(enabled: sender.state == .on) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        ready = false
     }
 
-    @objc private func scaleChanged(_ sender: NSSlider) { AppPreferences.shared.scale = sender.doubleValue; onSaved?() }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        ready = false
+    }
 
-    @objc private func save() {
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        ready = false
+    }
+
+    private func applyConfiguration(_ config: [String: Any]) {
         let preferences = AppPreferences.shared
-        preferences.codexPath = codexPathField.stringValue
-        preferences.codexHome = codexHomeField.stringValue
-        preferences.scale = scaleField.doubleValue
-        preferences.soundEnabled = soundCheckbox.state == .on
-        preferences.alwaysOnTop = topCheckbox.state == .on
-        preferences.allSpaces = spacesCheckbox.state == .on
-        preferences.mousePassthrough = passthroughCheckbox.state == .on
-        preferences.launchAtLogin = loginCheckbox.state == .on
-        updateLoginItem(enabled: preferences.launchAtLogin)
-        onSaved?()
+        if let layout = config["layout"] as? [String: Any] {
+            if let value = layout["scale"] as? NSNumber { preferences.scale = value.doubleValue }
+            if let value = layout["alwaysOnTop"] as? NSNumber { preferences.alwaysOnTop = value.boolValue }
+            if let value = layout["allSpaces"] as? NSNumber { preferences.allSpaces = value.boolValue }
+            if let value = layout["mousePassthrough"] as? NSNumber { preferences.mousePassthrough = value.boolValue }
+            if let value = layout["launchAtLogin"] as? NSNumber {
+                preferences.launchAtLogin = value.boolValue
+                updateLoginItem(enabled: value.boolValue)
+            }
+        }
+        if let appearance = config["appearance"] as? [String: Any] {
+            if let value = appearance["snapEnabled"] as? NSNumber { preferences.snapEnabled = value.boolValue }
+            if let value = appearance["showMenuButton"] as? NSNumber { preferences.showMenuButton = value.boolValue }
+        }
+        if let bubble = config["bubble"] as? [String: Any],
+           let value = bubble["closeAfterSeconds"] as? NSNumber {
+            preferences.bubbleCloseAfterSeconds = value.intValue
+        }
+        if let sound = config["sound"] as? [String: Any],
+           let value = sound["enabled"] as? NSNumber {
+            preferences.soundEnabled = value.boolValue
+        }
     }
 
-    @objc private func refresh() { onSaved?() }
+    private func restoreConfiguration() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard WhaleConfigurationStore.shared.importConfiguration(from: url) else { return }
+        applyConfiguration(WhaleConfigurationStore.shared.snapshot())
+        onAppearanceChanged?()
+        sendPayload()
+    }
 
-    @objc private func openHelp() { open("https://github.com/404404/AI-Balance-Whale-Widget#ai-balance-whale-macos") }
-    @objc private func openFeedback() { open("https://github.com/404404/AI-Balance-Whale-Widget/issues") }
-    private func open(_ string: String) { if let url = URL(string: string) { NSWorkspace.shared.open(url) } }
+    private func sendPayload() {
+        guard ready else { return }
+        let connection = connectionPayload()
+        let payload: [String: Any] = [
+            "config": WhaleConfigurationStore.shared.snapshot(),
+            "templates": ProviderTemplates.all,
+            "resources": WhaleConfigurationStore.shared.allResources(),
+            "app": [
+                "version": Bundle.main.object(forInfoDictionaryKey: "AIAppReleaseTag") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
+                "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知",
+                "connection": connection,
+                "diagnostics": diagnostics()
+            ]
+        ]
+        if let encoded = try? JSONSerialization.data(withJSONObject: payload),
+           let jsonString = String(data: encoded, encoding: .utf8) {
+            sendJavaScript("window.__AIWhaleSettings && window.__AIWhaleSettings.update(\(jsonString))")
+        }
+    }
+
+    private func sendPageSelection() {
+        sendJavaScript("window.__AIWhaleSettings && window.__AIWhaleSettings.selectPage(\(json(requestedPage)))")
+    }
+
+    private func sendJavaScript(_ script: String) {
+        webView.evaluateJavaScript(script) { _, error in
+            if let error { NSLog("AI Balance Whale settings JavaScript failed: %@", error.localizedDescription) }
+        }
+    }
+
+    private func json(_ value: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let encoded = String(data: data, encoding: .utf8) else { return "null" }
+        return String(encoded.dropFirst().dropLast())
+    }
+
+    private func connectionPayload() -> [String: Any] {
+        let preferences = AppPreferences.shared
+        let executable = CodexLocator.executable(configuredPath: preferences.codexPath)
+        let status = connectionState?()
+        let message = status?.message ?? (executable == nil ? "未找到可执行的 codex" : "已找到 codex，等待测试连接")
+        var result: [String: Any] = [
+            "path": preferences.codexPath,
+            "home": preferences.codexHome,
+            "message": message,
+            "status": status?.status.rawValue ?? "idle"
+        ]
+        if let path = executable?.path { result["resolvedPath"] = path }
+        if let email = status?.email { result["account"] = email }
+        if let version = status?.cliVersion { result["version"] = version }
+        return result
+    }
+
+    private func diagnostics() -> [[String: Any]] {
+        guard let appDelegate = NSApp.delegate as? AppDelegate else { return [] }
+        return appDelegate.whaleWindowDiagnostics()
+    }
 
     private func updateLoginItem(enabled: Bool) {
         guard #available(macOS 13.0, *) else { return }
         do {
-            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-        } catch {
-            // Keep the preference visible; macOS may deny registration for an
-            // unsigned development build. The app remains launchable manually.
-        }
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+        } catch {}
     }
 }

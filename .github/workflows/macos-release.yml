@@ -107,6 +107,8 @@ jobs:
           fi
       - name: Run fixture tests
         run: swift test --package-path MacOSApp
+      - name: Regression source checks
+        run: bash MacOSApp/scripts/verify-source.sh
       - name: Build App bundle
         env:
           APP_VERSION: ${{ steps.release.outputs.version }}
@@ -138,6 +140,7 @@ jobs:
           DMG="MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
           test "$(git rev-parse HEAD)" = "${{ steps.release.outputs.source_sha }}"
           test -f "$DMG" && test -f MacOSApp/dist/SHA256SUMS
+          test -f "$APP/Contents/Resources/Settings.html"
           test -f "$APP/Contents/Resources/AppIcon.icns"
           test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "${{ steps.release.outputs.version }}"
           mkdir -p "$RUNNER_TEMP/ai-balance-whale-verify"

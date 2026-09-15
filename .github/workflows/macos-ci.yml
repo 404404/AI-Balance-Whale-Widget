@@ -29,9 +29,11 @@ jobs:
           test "$(uname -m)" = "arm64"
       - name: Run Codex protocol fixture tests
         run: swift test --package-path MacOSApp
+      - name: Regression source checks
+        run: bash MacOSApp/scripts/verify-source.sh
       - name: Build ad-hoc arm64 App
         env:
-          APP_VERSION: 0.1.0-beta.2
+          APP_VERSION: 0.1.0-beta.4
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_MODE: ad-hoc
         run: MacOSApp/scripts/build.sh
@@ -40,6 +42,7 @@ jobs:
           APP="MacOSApp/dist/AI Balance Whale.app"
           test -d "$APP"
           test -f "$APP/Contents/Resources/WhaleWidget.html"
+          test -f "$APP/Contents/Resources/Settings.html"
           test -f "$APP/Contents/Resources/AppIcon.icns"
           test -f "$APP/Contents/Resources/DSniang1.png"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "0.1.0"

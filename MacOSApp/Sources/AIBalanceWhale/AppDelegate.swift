@@ -3,28 +3,37 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let provider = CodexAppServerClient()
+    private let externalProvider = ExternalProviderClient()
     private var whaleWindow: WhaleWindowController!
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
     private var isSleeping = false
     private(set) var latestProviderState = ProviderState()
+    private(set) var latestExternalBalances: [[String: Any]] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         provider.onStateChange = { [weak self] state in
             self?.latestProviderState = state
-            self?.whaleWindow?.render(state)
+            self?.whaleWindow?.render(state, externalBalances: self?.latestExternalBalances ?? [])
             self?.updateMenuTitles()
+            self?.settingsWindow?.refreshConnectionState()
         }
         whaleWindow = WhaleWindowController(provider: provider)
         whaleWindow.load()
         whaleWindow.show()
+        externalProvider.onUpdate = { [weak self] balances in
+            self?.latestExternalBalances = balances
+            self?.whaleWindow?.render(self?.latestProviderState ?? ProviderState(), externalBalances: balances)
+        }
+        externalProvider.refresh()
         setupStatusItem()
         setupObservers()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             guard let self, !isSleeping else { return }
             provider.refresh()
+            externalProvider.refresh()
         }
     }
 
@@ -35,19 +44,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings(_ sender: Any? = nil) {
-        if settingsWindow == nil { settingsWindow = SettingsWindowController() }
-        settingsWindow?.onSaved = { [weak self] in
-            guard let self else { return }
-            whaleWindow.applyPreferences()
-            provider.configurationChanged()
-            updateMenuTitles()
+        if settingsWindow == nil {
+            let controller = SettingsWindowController()
+            controller.connectionState = { [weak self] in self?.latestProviderState ?? ProviderState() }
+            controller.onAppearanceChanged = { [weak self] in
+                guard let self else { return }
+                whaleWindow.applyPreferences()
+                whaleWindow.render(latestProviderState, externalBalances: latestExternalBalances)
+                externalProvider.refresh()
+                updateMenuTitles()
+            }
+            controller.onConnectionChanged = { [weak self] in self?.provider.configurationChanged() }
+            controller.onTestConnection = { [weak self] in self?.provider.refresh(); self?.externalProvider.refresh() }
+            controller.onResetLayout = { [weak self] in self?.whaleWindow.resetPositionAndSize() }
+            settingsWindow = controller
         }
-        settingsWindow?.showWindow(nil)
-        if let window = settingsWindow?.window {
-            window.center()
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
+        let page: String
+        if let notification = sender as? Notification {
+            page = notification.userInfo?["page"] as? String ?? "general"
+        } else {
+            page = "general"
         }
+        settingsWindow?.show(page: page)
     }
 
     @objc private func toggleWhale(_ sender: Any? = nil) {
@@ -55,23 +73,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuTitles()
     }
 
-    @objc private func refreshNow(_ sender: Any? = nil) { provider.refresh() }
+    @objc private func refreshNow(_ sender: Any? = nil) { provider.refresh(); externalProvider.refresh() }
+
     @objc private func togglePassthrough(_ sender: NSMenuItem) {
         AppPreferences.shared.mousePassthrough.toggle()
         whaleWindow.applyPreferences()
         updateMenuTitles()
     }
+
     @objc private func toggleAlwaysOnTop(_ sender: NSMenuItem) {
         AppPreferences.shared.alwaysOnTop.toggle()
         whaleWindow.applyPreferences()
         updateMenuTitles()
     }
+
     @objc private func toggleAllSpaces(_ sender: NSMenuItem) {
         AppPreferences.shared.allSpaces.toggle()
         whaleWindow.applyPreferences()
         updateMenuTitles()
     }
+
     @objc private func quit(_ sender: Any? = nil) { NSApp.terminate(nil) }
+
+    func whaleWindowDiagnostics() -> [[String: Any]] { whaleWindow?.diagnostics() ?? [] }
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -105,7 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func menuItem(_ title: String, _ action: Selector, tag: Int) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self; item.tag = tag; item.state = .off
+        item.target = self
+        item.tag = tag
+        item.state = .off
         return item
     }
 
@@ -125,10 +151,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupObservers() {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.isSleeping = true; self?.provider.setSleeping(true)
+            self?.isSleeping = true
+            self?.provider.setSleeping(true)
         }
         center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.isSleeping = false; self?.provider.setSleeping(false)
+            self?.isSleeping = false
+            self?.provider.setSleeping(false)
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             self?.whaleWindow?.clampAndSave()
