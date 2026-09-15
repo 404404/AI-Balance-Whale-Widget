@@ -7,13 +7,15 @@
   <key>CFBundleIdentifier</key><string>com.404404.AIBalanceWhale</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>AI Balance Whale</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>AIAppReleaseTag</key><string>0.1.0-beta.1</string>
+  <key>AIAppReleaseTag</key><string>0.1.0-beta.2</string>
   <key>NSHumanReadableCopyright</key><string>AI Balance Whale fork by 404404; whale artwork and DSH plugin by MeteorNOX, MIT licensed.</string>
 </dict>
 </plist>

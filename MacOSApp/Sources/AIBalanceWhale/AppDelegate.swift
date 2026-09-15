@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow?.onSaved = { [weak self] in
             guard let self else { return }
             whaleWindow.applyPreferences()
-            provider.refresh()
+            provider.configurationChanged()
             updateMenuTitles()
         }
         settingsWindow?.showWindow(nil)
@@ -75,7 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.title = "🐋"
+        if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL) {
+            icon.size = NSSize(width: 18, height: 18)
+            icon.isTemplate = false
+            statusItem.button?.image = icon
+            statusItem.button?.imageScaling = .scaleProportionallyDown
+            statusItem.button?.title = ""
+            statusItem.button?.setAccessibilityLabel("AI Balance Whale")
+        } else {
+            statusItem.button?.title = "🐋"
+        }
         let menu = NSMenu()
         menu.addItem(menuItem("隐藏鲸鱼", #selector(toggleWhale(_:)), tag: 1))
         menu.addItem(menuItem("手动刷新额度", #selector(refreshNow(_:)), tag: 2))

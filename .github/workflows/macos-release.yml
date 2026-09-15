@@ -136,6 +136,7 @@ jobs:
           DMG="MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
           test "$(git rev-parse HEAD)" = "${{ steps.release.outputs.source_sha }}"
           test -f "$DMG" && test -f MacOSApp/dist/SHA256SUMS
+          test -f "$APP/Contents/Resources/AppIcon.icns"
           test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "${{ steps.release.outputs.version }}"
           mkdir -p "$RUNNER_TEMP/ai-balance-whale-verify"
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/ai-balance-whale-verify" "$DMG" >/dev/null
@@ -152,6 +153,7 @@ jobs:
           - Source commit: ${{ steps.release.outputs.source_sha }}
           - Target: macOS 14+, Apple Silicon arm64
           - Codex provider: local stdio codex app-server; fixture tests run in CI, real account data is never used in CI
+          - Icon: AppIcon.icns is generated from the bundled whale artwork and used by both the app bundle and the menu bar status item
           - Signing: ${SIGNING_MODE}; Developer ID builds are notarized and stapled when configured
           - Upstream baseline: MeteorNOX/DeepSeek-Balance-Whale-Widget@40cebc2937aea674247a0d0e03e16c154f7b9864
 

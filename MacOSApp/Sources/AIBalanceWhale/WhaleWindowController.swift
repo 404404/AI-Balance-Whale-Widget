@@ -23,7 +23,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         view.setValue(false, forKey: "drawsBackground")
         webView = view
         panel = WhalePanel(
-            contentRect: CGRect(x: 0, y: 0, width: 248, height: 274),
+            contentRect: CGRect(x: 0, y: 0, width: 248, height: 410),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -120,14 +120,14 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         var object: [String: Any] = [
             "status": state.status.rawValue,
             "message": state.message,
+            "email": state.email ?? NSNull(),
+            "planType": state.planType ?? NSNull(),
+            "lastUpdated": state.lastUpdated.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull(),
             "buckets": buckets,
             "scale": AppPreferences.shared.scale,
             "soundEnabled": AppPreferences.shared.soundEnabled,
             "flip": isLeftAttached,
         ]
-        if let email = state.email { object["email"] = email }
-        if let planType = state.planType { object["planType"] = planType }
-        if let updated = state.lastUpdated { object["lastUpdated"] = updated.timeIntervalSince1970 * 1000 }
         guard let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data: data, encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.__AIWhale && window.__AIWhale.update(\(json));", completionHandler: nil)
     }
@@ -136,7 +136,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
 
     private func restoreFrame() {
         guard let panel = window else { return }
-        let fallback = CGRect(x: 0, y: 0, width: 248, height: 274)
+        let fallback = CGRect(x: 0, y: 0, width: 248, height: 410)
         let saved = AppPreferences.shared.savedFrame() ?? fallback
         panel.setFrame(saved, display: false)
         clampAndSave()
@@ -173,6 +173,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         frame.origin.x = min(max(frame.origin.x, visible.minX), max(visible.minX, visible.maxX - frame.width))
         frame.origin.y = min(max(frame.origin.y, visible.minY), max(visible.minY, visible.maxY - frame.height))
         panel.setFrame(frame, display: false)
+        isLeftAttached = abs(frame.minX - visible.minX) < 1
         AppPreferences.shared.saveFrame(frame)
     }
 
