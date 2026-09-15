@@ -82,7 +82,7 @@ public enum RateLimitParser {
         var seen = Set<String>()
         buckets = buckets.filter { bucket in
             let reset = bucket.resetsAt.map { String(Int($0.timeIntervalSince1970)) } ?? "none"
-            let key = "\(bucket.id)|\(bucket.window.rawValue)|\(bucket.usedPercent.map(String.init) ?? "invalid")|\(reset)"
+            let key = "\(bucket.id)|\(bucket.window.rawValue)|\(bucket.usedPercent.map { String($0) } ?? "invalid")|\(reset)"
             return seen.insert(key).inserted
         }
 
@@ -106,7 +106,7 @@ public enum RateLimitParser {
         guard let value = value as? [String: Any] else { return }
         let rawPercent = number(value["usedPercent"])
         let used = rawPercent.flatMap { $0.isFinite && (0...100).contains($0) ? $0 : nil }
-        let duration = number(value["windowDurationMins"]).flatMap { value in
+        let duration: Int? = number(value["windowDurationMins"]).flatMap { value -> Int? in
             guard value.isFinite, value > 0, value <= Double(Int.max) else { return nil }
             return Int(value)
         }
