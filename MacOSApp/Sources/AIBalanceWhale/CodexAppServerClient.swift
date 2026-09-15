@@ -75,20 +75,40 @@ enum ProviderError: LocalizedError {
 enum CodexLocator {
     static func executable(configuredPath: String) -> URL? {
         let fileManager = FileManager.default
-        var candidates: [String] = []
-        if !configuredPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            candidates.append((configuredPath as NSString).expandingTildeInPath)
+        let explicit = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !explicit.isEmpty {
+            let path = (explicit as NSString).expandingTildeInPath
+            // An explicit path is authoritative. Do not silently use another
+            // CLI when the selected file is stale or not executable.
+            return fileManager.isExecutableFile(atPath: path) ? URL(fileURLWithPath: path) : nil
         }
 
         let home = NSHomeDirectory()
-        candidates += [
+        var candidates: [String] = [
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
             "/usr/bin/codex",
             "\(home)/.local/bin/codex",
             "\(home)/.npm-global/bin/codex",
             "\(home)/.volta/bin/codex",
+            "\(home)/Library/pnpm/codex",
+            "\(home)/.local/share/pnpm/codex",
         ]
+
+        // Node version managers use bounded, well-known directories. Inspect
+        // only these directories; never scan the home directory or auth data.
+        let managerRoots = [
+            "\(home)/.nvm/versions/node",
+            "\(home)/.fnm/node-versions",
+            "\(home)/.asdf/installs/nodejs",
+        ]
+        for root in managerRoots {
+            guard let entries = try? fileManager.contentsOfDirectory(atPath: root) else { continue }
+            for entry in entries.sorted().reversed() {
+                candidates.append("\(root)/\(entry)/bin/codex")
+                candidates.append("\(root)/\(entry)/installation/bin/codex")
+            }
+        }
         if let path = ProcessInfo.processInfo.environment["PATH"] {
             candidates += path.split(separator: ":").map { "\($0)/codex" }
         }
@@ -102,21 +122,41 @@ enum CodexLocator {
         return nil
     }
 
-    static func version(at executable: URL) -> String? {
+    static func version(at executable: URL, completion: @escaping (String?) -> Void) {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = executable
         process.arguments = ["--version"]
         process.standardOutput = pipe
         process.standardError = pipe
+
+        let lock = NSLock()
+        var completed = false
+        func finish(_ value: String?) {
+            lock.lock()
+            guard !completed else { lock.unlock(); return }
+            completed = true
+            lock.unlock()
+            DispatchQueue.main.async { completion(value) }
+        }
+
         do {
             try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return value?.isEmpty == false ? value : nil
         } catch {
-            return nil
+            finish(nil)
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            finish(value?.isEmpty == false ? value : nil)
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
+            guard process.isRunning else { return }
+            process.terminate()
+            finish(nil)
         }
     }
 }
@@ -151,6 +191,26 @@ final class CodexAppServerClient {
         callbackQueue.async { [weak self] in self?.stopOnMain() }
     }
 
+    func configurationChanged() {
+        callbackQueue.async { [weak self] in
+            guard let self else { return }
+            stopOnMain()
+            refreshInFlight = false
+            state.accountKey = nil
+            state.email = nil
+            state.planType = nil
+            state.buckets = []
+            state.lastUpdated = nil
+            state.cliPath = nil
+            state.cliVersion = nil
+            state.status = .idle
+            state.message = "设置已保存，正在重新连接 Codex…"
+            emit()
+            refreshOnMain()
+        }
+    }
+
+
     func stopImmediately() {
         input = nil
         output?.readabilityHandler = nil
@@ -180,11 +240,20 @@ final class CodexAppServerClient {
         emit()
 
         guard let executable = CodexLocator.executable(configuredPath: preferences.codexPath) else {
-            finish(.cliMissing, message: "请安装 Codex CLI，或在设置中指定 codex 可执行文件路径")
+            let configured = preferences.codexPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = configured.isEmpty
+                ? "请安装 Codex CLI，或在设置中指定 codex 可执行文件路径"
+                : "设置中的 codex 路径不可执行，请重新选择文件或清空后自动探测"
+            finish(.cliMissing, message: message)
             return
         }
         state.cliPath = executable.path
-        state.cliVersion = CodexLocator.version(at: executable)
+        state.cliVersion = nil
+        CodexLocator.version(at: executable) { [weak self] version in
+            guard let self, self.state.cliPath == executable.path else { return }
+            self.state.cliVersion = version
+            self.emit()
+        }
 
         ensureServer(executable: executable) { [weak self] error in
             guard let self else { return }

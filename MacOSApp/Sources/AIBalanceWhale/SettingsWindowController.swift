@@ -12,6 +12,7 @@ final class SettingsWindowController: NSWindowController {
     private let spacesCheckbox = NSButton(checkboxWithTitle: "跨桌面显示，并辅助全屏应用", target: nil, action: nil)
     private let passthroughCheckbox = NSButton(checkboxWithTitle: "空白时鼠标穿透（从菜单栏恢复）", target: nil, action: nil)
     private let loginCheckbox = NSButton(checkboxWithTitle: "登录时启动（默认关闭）", target: nil, action: nil)
+    private let codexStatusLabel = NSTextField(labelWithString: "")
 
     init() {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 430))
@@ -42,10 +43,14 @@ final class SettingsWindowController: NSWindowController {
         button("选择…", NSRect(x: 478, y: 330, width: 58, height: 26), #selector(chooseCodex))
         label("CODEX_HOME（可留空，默认 ~/.codex）", NSRect(x: 24, y: 291, width: 250, height: 22))
         codexHomeField.frame = NSRect(x: 274, y: 288, width: 262, height: 26); view.addSubview(codexHomeField)
-        label("显示与系统", NSRect(x: 24, y: 248, width: 200, height: 22), size: 14).font = .boldSystemFont(ofSize: 14)
+        codexStatusLabel.frame = NSRect(x: 24, y: 260, width: 512, height: 18)
+        codexStatusLabel.font = .systemFont(ofSize: 11)
+        codexStatusLabel.textColor = .secondaryLabelColor
+        view.addSubview(codexStatusLabel)
+        label("显示与系统", NSRect(x: 24, y: 236, width: 200, height: 22), size: 14).font = .boldSystemFont(ofSize: 14)
         let checks = [soundCheckbox, topCheckbox, spacesCheckbox, passthroughCheckbox, loginCheckbox]
         for (index, checkbox) in checks.enumerated() {
-            checkbox.target = self; checkbox.action = #selector(checkChanged(_:)); checkbox.frame = NSRect(x: 28, y: 204 - CGFloat(index) * 30, width: 400, height: 24); view.addSubview(checkbox)
+            checkbox.target = self; checkbox.action = #selector(checkChanged(_:)); checkbox.frame = NSRect(x: 28, y: 192 - CGFloat(index) * 30, width: 400, height: 24); view.addSubview(checkbox)
         }
         label("鲸鱼大小", NSRect(x: 24, y: 50, width: 90, height: 22))
         scaleField.frame = NSRect(x: 114, y: 51, width: 250, height: 22); scaleField.target = self; scaleField.action = #selector(scaleChanged(_:)); view.addSubview(scaleField)
@@ -60,6 +65,7 @@ final class SettingsWindowController: NSWindowController {
         let preferences = AppPreferences.shared
         codexPathField.stringValue = preferences.codexPath
         codexHomeField.stringValue = preferences.codexHome
+        updateCodexStatus()
         scaleField.doubleValue = preferences.scale
         soundCheckbox.state = preferences.soundEnabled ? .on : .off
         topCheckbox.state = preferences.alwaysOnTop ? .on : .off
@@ -71,7 +77,20 @@ final class SettingsWindowController: NSWindowController {
     @objc private func chooseCodex() {
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.unixExecutable]
-        if panel.runModal() == .OK, let url = panel.url { codexPathField.stringValue = url.path }
+        if panel.runModal() == .OK, let url = panel.url { codexPathField.stringValue = url.path; updateCodexStatus() }
+    }
+
+    private func updateCodexStatus() {
+        let configured = codexPathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let executable = CodexLocator.executable(configuredPath: configured) else {
+            codexStatusLabel.stringValue = configured.isEmpty ? "自动探测：未找到可执行的 codex" : "手动路径不可执行：\(configured)"
+            return
+        }
+        codexStatusLabel.stringValue = "当前 CLI：\(executable.path) · 版本探测中…"
+        CodexLocator.version(at: executable) { [weak self] version in
+            guard let self else { return }
+            self.codexStatusLabel.stringValue = "当前 CLI：\(executable.path) · \(version ?? "版本未知或无法运行")"
+        }
     }
 
     @objc private func checkChanged(_ sender: NSButton) {
