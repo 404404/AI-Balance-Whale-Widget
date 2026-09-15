@@ -55,7 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateMenuTitles()
             }
             controller.onConnectionChanged = { [weak self] in self?.provider.configurationChanged() }
-            controller.onTestConnection = { [weak self] in self?.provider.refresh(); self?.externalProvider.refresh() }
+            controller.onTestConnection = { [weak self] path, home in
+                guard let self else { return }
+                AppPreferences.shared.codexPath = path
+                AppPreferences.shared.codexHome = home
+                self.provider.configurationChanged()
+                self.externalProvider.refresh()
+            }
             controller.onResetLayout = { [weak self] in self?.whaleWindow.resetPositionAndSize() }
             settingsWindow = controller
         }

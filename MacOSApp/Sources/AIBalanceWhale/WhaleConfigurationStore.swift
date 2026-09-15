@@ -198,7 +198,7 @@ final class WhaleConfigurationStore {
             "layout": ["scale": 1.0, "alwaysOnTop": false, "allSpaces": false, "mousePassthrough": false, "launchAtLogin": false],
             "appearance": ["snapEnabled": true, "showMenuButton": true, "bubbleEnabled": true, "flip": false, "roleId": "builtin-dsniang"],
             "sound": ["enabled": true, "volume": 0.45, "set": "duck", "press": "Ya1.mp3", "release": "Ya2.mp3", "taskEnd": "end_a"],
-            "bubble": ["closeAfterSeconds": 0, "advanceOnClick": true, "steps": [["kind": "status", "text": "Codex 订阅额度"]]],
+            "bubble": ["closeAfterSeconds": 0, "advanceOnClick": true, "firstAction": "show", "againAction": "toggle", "library": [], "steps": [["kind": "status", "text": "Codex 订阅额度"]]],
             "providers": ProviderTemplates.all.filter { (($0["id"] as? String) == "deepseek") || (($0["id"] as? String) == "codex") },
             "reminders": ["enabled": false, "threshold": 20, "budget": NSNull()],
             "records": ["source": "未连接事件来源", "items": []],

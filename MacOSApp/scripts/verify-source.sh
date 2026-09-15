@@ -7,8 +7,8 @@ SETTINGS="$ROOT/MacOSApp/Resources/Settings.html"
 WINDOW="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleWindowController.swift"
 STORE="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleConfigurationStore.swift"
 
-for pattern in 'contextmenu' 'pointerup' 'pointercancel' 'dragEnd' 'setLayout' 'overflow: hidden'; do
-  grep -Fq "$pattern" "$HTML"
+for pattern in 'contextmenu' 'pointerup' 'pointercancel' 'dragEnd' 'setLayout' 'overflow: hidden' 'navigationToken' 'bubbleLayout' 'dshwv-bshape' 'dshwv-b1' 'dshwv-b2'; do
+  grep -Fq "$pattern" "$HTML" || { echo "missing WhaleWidget pattern: $pattern" >&2; exit 1; }
 done
 for pattern in 'data-page="general"' 'data-page="models"' 'data-page="resources"' 'data-page="bubbles"' 'data-page="sounds"' 'data-page="reminders"' 'data-page="about"' 'messageHandlers.settings' 'saveCredential' 'importResource'; do
   grep -Fq "$pattern" "$SETTINGS"

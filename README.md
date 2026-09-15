@@ -8,7 +8,7 @@
 
 1. macOS 14 或更高版本（首版仅 Apple Silicon arm64）。
 2. 安装并登录 Codex CLI；App 不会自动下载、捆绑或升级 CLI。Finder 启动时若找不到终端里的 `codex`，在「设置」中指定可执行文件路径，并可指定实际 `CODEX_HOME`。
-3. 从本 fork 的 [macos-v0.1.0-beta.4 Release](https://github.com/404404/AI-Balance-Whale-Widget/releases) 下载 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。首次预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
+3. 从本 fork 的 [macos-v0.1.0-beta.5 Release](https://github.com/404404/AI-Balance-Whale-Widget/releases) 下载 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。首次预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
 
 ### macOS 首版范围
 
@@ -19,8 +19,8 @@
 
 ```bash
 swift test --package-path MacOSApp
-APP_VERSION=0.1.0-beta.4 BUILD_NUMBER=2 MacOSApp/scripts/build.sh
-APP_VERSION=0.1.0-beta.4 MacOSApp/scripts/create-dmg.sh
+APP_VERSION=0.1.0-beta.5 BUILD_NUMBER=2 MacOSApp/scripts/build.sh
+APP_VERSION=0.1.0-beta.5 MacOSApp/scripts/create-dmg.sh
 ```
 
 GitHub Actions 的 macOS CI 在 PR 与相关分支 push 时运行脱敏额度 fixture 测试并检查 arm64 App。发布 workflow 只在 `macos-v*` 标签或默认分支已包含该 workflow 后的 `workflow_dispatch` 运行，输入会严格校验版本与标签、拒绝现有标签/Release，并在同一 SHA 上构建、检查 DMG、上传 `SHA256SUMS` 后再公开预发布。普通 push 不发布 npm 或 Release；旧 DSH 插件版本仍由根目录 `package.json` 单独管理，保留上游插件用途与 MIT 许可证。
