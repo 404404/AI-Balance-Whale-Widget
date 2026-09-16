@@ -110,9 +110,10 @@ final class WidgetWebViewTests: XCTestCase {
             if (ready as? Bool) == true { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
+        _ = try await evaluate(webView, "document.querySelector(\"#nav button[data-page='bubbles']\").click()")
+        try await Task.sleep(nanoseconds: 100_000_000)
         let result = try await evaluate(webView, """
           (function () {
-            window.__AIWhaleSettings.selectPage('bubbles')
             var editorMask = document.querySelector('#upstreamEditorMount .dshwv-bubmask')
             return {
               editor: Boolean(window.__AIWhaleEditorAPI),

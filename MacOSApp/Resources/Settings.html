@@ -13,6 +13,21 @@
 <section class="page" data-page="about"><h2>关于与诊断</h2><p class="lead">本 fork 的帮助、反馈、配置备份和脱敏诊断。</p><div id="about"></div></section>
 </main>
 <script>
+// The upstream editor is mounted once and hidden with its settings page.  Open
+// it only after the app's real "气泡与内容" navigation handler has selected
+// that page; this keeps navigation, preview, and desktop rendering on the
+// same editor API without an iframe or a persistent DOM observer.
+document.addEventListener('click', function (event) {
+  var button = event.target && event.target.closest && event.target.closest('#nav button[data-page="bubbles"]')
+  if (!button) return
+  setTimeout(function () {
+    try {
+      if (window.__AIWhaleEditorAPI) window.__AIWhaleEditorAPI.openBubbleEditor()
+    } catch (error) {}
+  }, 0)
+}, true)
+</script>
+<script>
 (function () {
   window.__AIWhaleStandalone = true
   window.__AIWhaleEditorMode = true
