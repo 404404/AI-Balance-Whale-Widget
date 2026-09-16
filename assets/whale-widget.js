@@ -14751,8 +14751,16 @@ function pollLastTurn() {
 setInterval(pollLastTurn, 1000)
 if (window.__AIWhaleEditorMode) {
   try {
+    var editorHost = window.__AIWhaleEditorMount || editorMount
+    if (editorHost && bubbleMask.parentNode !== editorHost) editorHost.appendChild(bubbleMask)
     window.__AIWhaleEditorAPI = {
-      openBubbleEditor: openBubbleEditor,
+      openBubbleEditor: function () {
+        try {
+          var host = window.__AIWhaleEditorMount || editorMount
+          if (host && bubbleMask.parentNode !== host) host.appendChild(bubbleMask)
+          openBubbleEditor()
+        } catch (err) {}
+      },
       closeBubbleEditor: closeBubbleEditor,
       openRolePanel: toggleRolePanel,
       openAudioPanel: toggleAudioGroupPanel,

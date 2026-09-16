@@ -113,6 +113,7 @@ final class WidgetWebViewTests: XCTestCase {
         let result = try await evaluate(webView, """
           (function () {
             window.__AIWhaleSettings.selectPage('bubbles')
+            window.__AIWhaleEditorAPI.openBubbleEditor()
             return {
               editor: Boolean(window.__AIWhaleEditorAPI),
               mask: Boolean(document.querySelector('#upstreamEditorMount .dshwv-bubmask')),
