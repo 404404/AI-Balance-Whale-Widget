@@ -51,6 +51,8 @@ final class WidgetWebViewTests: XCTestCase {
             print("WHALE_WEBKIT_GEOMETRY compact scale=\(scale) app=\(rect(metrics, "app")) whale=\(rect(metrics, "whale")) computedHeight=\(metrics["computedHeight"] ?? "?")")
         }
 
+        _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:1.0, height:184})")
+        try await Task.sleep(nanoseconds: 100_000_000)
         _ = try await evaluate(webView, "window.__AIWhale.toggleBubble()")
         try await Task.sleep(nanoseconds: 180_000_000)
         let expanded = try await widgetMetrics(webView)

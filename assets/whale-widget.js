@@ -10018,7 +10018,10 @@ body.appendChild(bubbleBox)
 root.appendChild(body)
 root.appendChild(menuBtn)
 document.body.appendChild(root)
-if (window.__AIWhaleStandalone) root.__dshwToggleBubble = function () { try { whaleClick() } catch (err) {} }
+if (window.__AIWhaleStandalone) {
+  root.__dshwToggleBubble = function () { try { whaleClick() } catch (err) {} }
+  root.__dshwHideBubble = function () { try { hideBubble() } catch (err) {} }
+}
 document.body.appendChild(menuBox)
 
 // 泡泡内容整体与视觉中心对齐:

@@ -96,7 +96,8 @@ html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
     },
     toggleBubble: function () {
       var root = document.querySelector(".dshwv-root");
-      if (root && root.__dshwToggleBubble) root.__dshwToggleBubble();
+      if (root && root.__dshwHideBubble && root.querySelector(".dshwv-pop-open")) root.__dshwHideBubble();
+      else if (root && root.__dshwToggleBubble) root.__dshwToggleBubble();
     }
   };
   function reportLayout() {
