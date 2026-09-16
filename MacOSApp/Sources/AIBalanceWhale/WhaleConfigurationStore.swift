@@ -129,6 +129,14 @@ final class WhaleConfigurationStore {
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
+    func deleteCredential(reference: String) -> Bool {
+        let trimmedReference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReference.isEmpty else { return false }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.404404.AIBalanceWhale.credentials", kSecAttrAccount as String: trimmedReference]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     func credential(reference: String) -> String? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.404404.AIBalanceWhale.credentials", kSecAttrAccount as String: reference, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: CFTypeRef?

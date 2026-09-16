@@ -17,6 +17,6 @@ DSH plugin remains a separate npm package and keeps its upstream attribution.
 | DSH routes and browser host | None | Not used by the Mac App; it runs without DSH, Node.js or a browser. |
 | Developer ID signing/notarization | GitHub Actions signing mode | Ad-hoc is supported when secrets are absent; Developer ID/notarization is conditional on repository secrets. |
 
-## Beta 5 verification boundary
+## Beta 7 verification boundary
 
-`macos-v0.1.0-beta.5` was built by GitHub Actions on the macOS 14 arm64 runner and passed the Swift fixture tests, layout/anchor/queue tests, bundle/resource checks, DMG mount check, arm64 check and ad-hoc codesign integrity check. This execution environment has no macOS GUI, so Finder/WKWebView screenshots, real pointer input, Spaces/full-screen behavior and a real user's Codex account query remain explicitly unverified here; CI fixtures never contain credentials.
+The beta.7 candidate adds the complete upstream `whale-widget.js` editor and a native local route adapter. CI runs Swift fixtures, packaged WKWebView geometry/resource tests, arm64 bundle checks, DMG mount checks and ad-hoc codesign integrity checks. This Linux execution environment cannot run Finder, AppKit or a real Codex account; GUI/pointer/Spaces and real-account checks remain explicitly unverified until a user runs the uploaded DMG on macOS. CI fixtures never contain credentials.

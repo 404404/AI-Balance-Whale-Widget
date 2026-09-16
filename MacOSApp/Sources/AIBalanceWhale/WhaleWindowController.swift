@@ -22,12 +22,15 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private var refreshRequestedForGeneration = 0
     private var pendingLayoutScript: String?
     private var pendingRenderScript: String?
+    private var pendingHostResponseScripts: [String] = []
 
     private var isLeftAttached = false
     private var isRightAttached = false
     private var bubbleVisible = false
     private var bubbleHeight: CGFloat = WhaleLayout.defaultBubbleHeight
     private var debugEvents: [(Date, String)] = []
+    private lazy var hostAdapter = WhaleHostAdapter(owner: self)
+    private let usesEmbeddedUpstreamBubble = true
 
     init(provider: CodexAppServerClient) {
         self.provider = provider
@@ -70,6 +73,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         navigationFinished = false
         frontendReady = false
         refreshRequestedForGeneration = 0
+        pendingHostResponseScripts.removeAll()
         recordDebug("navigation started \(navigationToken)")
 
         let builtinWhale = Bundle.main.url(forResource: "DSniang1", withExtension: "png")
@@ -165,6 +169,8 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
                 refreshRequestedForGeneration = navigationGeneration
                 provider.refresh()
             }
+        case "hostRequest":
+            handleHostRequest(body)
         case "refresh":
             provider.refresh()
         case "openSettings":
@@ -283,8 +289,8 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             "vendors": externalBalances
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object),
-              let json = String(data: data, encoding: .utf8) else { return }
-        pendingRenderScript = "window.__AIWhale && window.__AIWhale.update(\(json))"
+              let payloadJSON = String(data: data, encoding: .utf8) else { return }
+        pendingRenderScript = "window.__AIWhale && window.__AIWhale.update(\(payloadJSON))"
         flushPendingScripts()
     }
 
@@ -359,7 +365,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private func currentContentSize() -> CGSize {
         WhaleLayout.contentSize(
             scale: AppPreferences.shared.scale,
-            bubbleVisible: bubbleVisible,
+            bubbleVisible: usesEmbeddedUpstreamBubble ? false : bubbleVisible,
             bubbleHeight: bubbleHeight
         )
     }
@@ -438,6 +444,11 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             pendingRenderScript = nil
             evaluate(script)
         }
+        if !pendingHostResponseScripts.isEmpty {
+            let scripts = pendingHostResponseScripts
+            pendingHostResponseScripts.removeAll()
+            scripts.forEach { evaluate($0) }
+        }
     }
 
     private func evaluate(_ script: String) {
@@ -491,6 +502,22 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         recordDebug("image complete=\(complete) natural=\(width)x\(height) fallback=\(fallback)")
     }
 
+    private func handleHostRequest(_ body: [String: Any]) {
+        guard let requestID = body["requestId"] as? String,
+              let method = body["method"] as? String,
+              let path = body["path"] as? String else { return }
+        let result = hostAdapter.handle(method: method, rawPath: path, body: body["body"])
+        guard let data = try? JSONSerialization.data(withJSONObject: result.1),
+              let payloadJSON = String(data: data, encoding: .utf8) else { return }
+        let script = "window.__AIWhaleHostResponse && window.__AIWhaleHostResponse(\(json(requestID)),\(result.0),\(payloadJSON))"
+        if scriptsReady { evaluate(script) } else { pendingHostResponseScripts.append(script) }
+    }
+    private func json(_ value: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let encoded = String(data: data, encoding: .utf8) else { return "null" }
+        return String(encoded.dropFirst().dropLast())
+    }
+
     private func recordDebug(_ event: String) {
         debugEvents.append((Date(), event))
         if debugEvents.count > 80 { debugEvents.removeFirst(debugEvents.count - 80) }
@@ -506,4 +533,5 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
 
 extension Notification.Name {
     static let aiWhaleOpenSettings = Notification.Name("AIWhaleOpenSettings")
+    static let aiWhaleProviderConfigurationChanged = Notification.Name("AIWhaleProviderConfigurationChanged")
 }

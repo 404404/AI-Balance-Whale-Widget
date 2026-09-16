@@ -1,336 +1,121 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>AI Balance Whale</title>
-  <style>
-    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; --s: 1; --h: 184; --u: 1px; }
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
-    #app { position: relative; width: calc(248px * var(--s)); height: calc(var(--h) * 1px * var(--s)); pointer-events: none; overflow: hidden; }
-    #whale-area { position: absolute; left: 0; bottom: 0; width: calc(248px * var(--s)); height: calc(174px * var(--s)); pointer-events: none; }
-    #whale { position: absolute; left: calc(32px * var(--s)); bottom: 0; width: calc(184px * var(--s)); height: calc(174px * var(--s)); object-fit: contain; object-position: center bottom; display: block; pointer-events: auto; cursor: grab; touch-action: none; -webkit-user-drag: none; user-select: none; transform-origin: 50% 100%; transition: transform .12s ease; }
-    #whale.pressed { transform: scale(.94, .9); cursor: grabbing; }
-    #whale.flip { transform: scaleX(-1); }
-    #whale.flip.pressed { transform: scale(-.94, .9); }
-    /* The exact upstream bubble geometry: 1026x700 SVG plus two tail ellipses. */
-    .dshwv-pop { position: absolute; left: calc(2px * var(--s)); bottom: calc(180px * var(--s)); width: calc(244px * var(--s)); aspect-ratio: 1026 / 700; pointer-events: none; z-index: 3; --dshw-u: calc(var(--s) * .2378px); opacity: 0; visibility: hidden; }
-    .dshwv-pop.visible { opacity: 1; visibility: visible; }
-    .dshwv-pop, .dshwv-pop svg { background: transparent !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
-    .dshwv-pop svg { display: block; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-    .dshwv-pop .dshwv-bshape, .dshwv-pop .dshwv-b1, .dshwv-pop .dshwv-b2 { opacity: 0; transform: scale(.7); transform-box: fill-box; transform-origin: 50% 50%; transition: opacity .2s ease, transform .2s ease; }
-    .dshwv-pop.visible .dshwv-bshape, .dshwv-pop.visible .dshwv-b1, .dshwv-pop.visible .dshwv-b2 { opacity: 1; transform: none; }
-    .dshwv-pop.visible .dshwv-b2 { transition-delay: 0s; }
-    .dshwv-pop.visible .dshwv-b1 { transition-delay: .13s; }
-    .dshwv-pop.visible .dshwv-bshape { transition-delay: .26s; }
-    .dshwv-pop .dshwv-bshape { transition-delay: .1s; }
-    .dshwv-pop .dshwv-b1 { transition-delay: .2s; }
-    .dshwv-pop .dshwv-b2 { transition-delay: .3s; }
-    .dshwv-text { position: absolute; left: 44.25%; top: 36%; width: 66%; height: 64%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #536ba9; line-height: 1.15; white-space: normal; pointer-events: none; opacity: 0; transition: opacity .16s ease, transform .3s ease; overflow: hidden; }
-    .dshwv-pop.visible .dshwv-text { opacity: 1; transition: opacity .16s ease .36s, transform .3s ease; }
-    .dshwv-trow { flex: 0 0 auto; max-width: 100%; margin: calc(var(--s) * 2px) 0; line-height: 1.18; overflow-wrap: anywhere; }
-    .dshwv-label { font-size: calc(var(--s) * 15.7px); font-weight: 600; letter-spacing: .06em; }
-    .dshwv-amount { font-size: calc(var(--s) * 30.5px); font-weight: 800; line-height: 1.05; }
-    .dshwv-hint { font-size: calc(var(--s) * 13.3px); color: #9fb0d9; letter-spacing: .02em; margin-top: calc(var(--s) * 2px); line-height: 1.15; }
-    .dshwv-wrap { max-width: 100%; line-height: 1.2; }
-    .dshwv-mimg { max-width: 90%; max-height: calc(var(--s) * 70px); object-fit: contain; display: block; -webkit-user-drag: none; }
-    .dshwv-link { color: #3856a0; text-decoration: underline; pointer-events: auto; cursor: pointer; }
-    #menu { position: absolute; right: calc(7px * var(--s)); bottom: calc(62px * var(--s)); width: calc(28px * var(--s)); height: calc(28px * var(--s)); border-radius: 50%; border: 0; background: rgba(255,255,255,.94); color: #203170; pointer-events: auto; z-index: 5; font-size: calc(14px * var(--s)); }
-    #menu:hover { background: #edf2ff; }
-    #hint { position: absolute; bottom: calc(1px * var(--s)); left: 0; width: 100%; text-align: center; color: rgba(32,49,112,.58); font-size: calc(10px * var(--s)); pointer-events: none; }
-    #context-menu { display: none; position: fixed; z-index: 20; left: calc(5px * var(--s)); top: calc(4px * var(--s)); width: calc(196px * var(--s)); max-height: calc(174px * var(--s)); overflow-y: auto; box-sizing: border-box; padding: calc(5px * var(--s)); border: 1px solid rgba(32,49,112,.16); border-radius: calc(10px * var(--s)); background: rgba(255,255,255,.98); pointer-events: auto; }
-    #context-menu.visible { display: block; }
-    #context-menu button { display: block; width: 100%; border: 0; border-radius: calc(7px * var(--s)); padding: calc(5px * var(--s)) calc(8px * var(--s)); background: transparent; color: #203170; text-align: left; font-size: calc(11px * var(--s)); }
-    #context-menu button:hover { background: #edf2ff; }
-    #context-menu .separator { height: 1px; margin: calc(4px * var(--s)) 2px; background: rgba(32,49,112,.12); }
-    .ready #bubble-title::before { content: "● "; color: #36a269; }
-    .stale #bubble-title::before { content: "● "; color: #d58a2a; }
-    .error #bubble-title::before, .offline #bubble-title::before, .notLoggedIn #bubble-title::before, .cliMissing #bubble-title::before { content: "● "; color: #c65353; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI Balance Whale</title>
+<style>
+:root { color-scheme: light; --ai-scale: 1; --ai-content-height: 184; background: transparent; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+html .dshwv-root { position: absolute !important; left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important; width: calc(248px * var(--ai-scale)) !important; height: calc(var(--ai-content-height) * 1px * var(--ai-scale)) !important; --dshw-base: calc(248px * var(--ai-scale)) !important; transform: none !important; transition: none !important; overflow: visible !important; }
+html .dshwv-body { width: 100% !important; height: 100% !important; }
+html .dshwv-img { right: auto !important; left: 12.9% !important; bottom: 0 !important; width: 74.2% !important; height: 94.6% !important; object-fit: contain !important; object-position: center bottom !important; }
+html .dshwv-pop { left: .8% !important; top: 0 !important; width: 98.4% !important; height: auto !important; }
+html .dshwv-menu { max-height: 86vh; overflow-y: auto; }
+html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
+</style>
 </head>
 <body>
-  <main id="app">
-    <section id="bubble" class="dshwv-pop" aria-live="polite">
-      <svg viewBox="0 0 1026 700" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-        <path class="dshwv-bshape" fill="#FFFFFF" stroke="#203170" stroke-width="18" stroke-linejoin="round" stroke-linecap="round" d="M 827 248 A 373 232 0 1 0 81 246 A 373 232 0 0 0 301 465 A 57 32 10 0 0 413 484 A 373 232 0 0 0 827 248 Z"/>
-        <ellipse class="dshwv-b1" cx="352" cy="561" rx="37.5" ry="26" fill="#FFFFFF" stroke="#203170" stroke-width="18"/>
-        <ellipse class="dshwv-b2" cx="442" cy="646" rx="24.5" ry="18" fill="#FFFFFF" stroke="#203170" stroke-width="18"/>
-      </svg>
-      <div id="bubble-text" class="dshwv-text"><div id="bubble-content"></div></div>
-    </section>
-    <div id="whale-area">
-      <button id="menu" type="button" aria-label="打开设置">⚙</button>
-      <img id="whale" src="DSniang1.png" alt="小鲸鱼" draggable="false">
-      <div id="hint">点击查看额度 · 拖动移动</div>
-    </div>
-  </main>
-  <nav id="context-menu" aria-label="小鲸鱼菜单">
-    <button data-action="toggle">显示 / 隐藏气泡</button>
-    <button data-action="refresh">刷新额度</button>
-    <div class="separator"></div>
-    <button data-page="general">通用与桌面设置…</button>
-    <button data-page="models">模型与账户设置…</button>
-    <button data-page="resources">角色与图片…</button>
-    <button data-page="bubbles">气泡与内容…</button>
-    <button data-page="sounds">音效…</button>
-    <button data-page="reminders">提醒与用量…</button>
-    <button data-action="restore">恢复人偶位置和大小</button>
-  </nav>
-  <script>
-    (function () {
-      "use strict";
-      var app = document.getElementById("app");
-      var bubble = document.getElementById("bubble");
-      var bubbleContent = document.getElementById("bubble-content");
-      var whale = document.getElementById("whale");
-      var menu = document.getElementById("menu");
-      var contextMenu = document.getElementById("context-menu");
-      var token = (location.hash || "").replace(/^#/, "");
-      var defaults = {
-        status: "idle", message: "等待查询 Codex 额度", buckets: [], email: null, planType: null,
-        lastUpdated: null, scale: 1, flip: false, soundEnabled: true,
-        showMenuButton: true, bubbleCloseAfterSeconds: 0, roleImage: "DSniang1.png",
-        pressSound: "Ya1.mp3", releaseSound: "Ya2.mp3", soundVolume: .45,
-        bubble: { firstAction: "show", againAction: "toggle", advanceOnClick: true, closeAfterSeconds: 0,
-          steps: [{ kind: "status", text: "Codex 订阅额度" }] }
-      };
-      var state = JSON.parse(JSON.stringify(defaults));
-      var pointer = null, closeTimer = null, bubbleOpen = false, queueIndex = 0;
-      var lastRandom = null, expiryNotified = {};
-      var pressSound = new Audio("Ya1.mp3"), releaseSound = new Audio("Ya2.mp3");
-      pressSound.volume = .45; releaseSound.volume = .45;
-      var fallbackRoleActive = false;
-      function reportWhaleImage() {
-        post("imageState", { complete: !!whale.complete, naturalWidth: whale.naturalWidth || 0, naturalHeight: whale.naturalHeight || 0, fallback: fallbackRoleActive });
+<script>
+(function () {
+  "use strict";
+  window.__AIWhaleStandalone = true;
+  var token = (location.hash || "").replace(/^#/, "");
+  if (token === "upstream-settings") document.documentElement.classList.add("aiwhale-editor")
+  var pending = Object.create(null);
+  var requestSerial = 0;
+  var resourceURLs = { roles: {}, bubbles: {}, audio: {} };
+  window.__AIWhaleResourceURLs = resourceURLs;
+  function post(type, payload) {
+    var message = Object.assign({ type: type, navigationToken: token }, payload || {});
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) {
+        window.webkit.messageHandlers.bridge.postMessage(message);
       }
-      whale.addEventListener("load", reportWhaleImage);
-      whale.addEventListener("error", function () {
-        if (!fallbackRoleActive && whale.getAttribute("src") !== "DSniang1.png") {
-          fallbackRoleActive = true;
-          state.roleImage = "DSniang1.png";
-          whale.src = "DSniang1.png";
-        }
-        reportWhaleImage();
+    } catch (error) { console.error("native bridge post failed", error); }
+  }
+  window.__AIWhaleNativePost = post;
+  function mergeResources(path, body) {
+    if (!body || typeof body !== "object") return;
+    if (path.indexOf("/roles.json") >= 0 && Array.isArray(body.roles)) body.roles.forEach(function (item) {
+      if (item && item.id && item.url) resourceURLs.roles[item.id] = item.url;
+    });
+    if (path.indexOf("/bubble-imgs.json") >= 0 && Array.isArray(body.images)) body.images.forEach(function (item) {
+      if (item && item.id && item.url) resourceURLs.bubbles[item.id] = item.url;
+    });
+    if (path.indexOf("/audio.json") >= 0) {
+      (body.fragments || []).forEach(function (item) {
+        if (item && item.id && item.url) resourceURLs.audio[item.id] = item.url;
       });
-
-      if (whale.complete) reportWhaleImage();
-
-      function post(type, payload) {
-        var message = Object.assign({ type: type, navigationToken: token }, payload || {});
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) {
-          window.webkit.messageHandlers.bridge.postMessage(message);
-        }
-      }
-      function formatDate(value) {
-        if (!value) return "";
-        try { return new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)); } catch (e) { return ""; }
-      }
-      function countdown(timestamp) {
-        if (!timestamp) return "等待重置时间";
-        var seconds = Math.max(0, Math.floor((timestamp - Date.now()) / 1000));
-        if (!seconds) return "等待重新查询";
-        var days = Math.floor(seconds / 86400); seconds %= 86400;
-        var hours = Math.floor(seconds / 3600); seconds %= 3600;
-        var minutes = Math.floor(seconds / 60); seconds %= 60;
-        if (days) return days + "天" + hours + "小时后重置";
-        if (hours) return hours + "小时" + minutes + "分后重置";
-        return minutes + "分" + seconds + "秒后重置";
-      }
-      function bubbleConfig() {
-        var b = state.bubble && typeof state.bubble === "object" ? state.bubble : {};
-        var steps = Array.isArray(b.steps) ? b.steps : [];
-        if (!steps.length && Array.isArray(state.bubbleSteps)) steps = state.bubbleSteps;
-        return Object.assign({ firstAction: "show", againAction: "toggle", advanceOnClick: true, closeAfterSeconds: 0, steps: steps }, b);
-      }
-      function effectiveSteps() {
-        var steps = bubbleConfig().steps || [];
-        return steps.length ? steps : [{ kind: "status", text: "Codex 订阅额度" }];
-      }
-      function weightedChoice(items) {
-        if (!items.length) return null;
-        var total = items.reduce(function (n, x) { return n + Math.max(0, Number(x.weight) || 1); }, 0);
-        var value = Math.random() * Math.max(total, 1), index = 0;
-        for (var i = 0; i < items.length; i++) {
-          value -= Math.max(0, Number(items[i].weight) || 1);
-          if (value <= 0) { index = i; break; }
-        }
-        if (items.length > 1 && index === lastRandom) index = (index + 1) % items.length;
-        lastRandom = index;
-        return items[index];
-      }
-      function textNode(text, className) {
-        var el = document.createElement("div"); el.className = className || "dshwv-trow dshwv-wrap"; el.textContent = text || ""; return el;
-      }
-      function applyModuleStyle(el, module) {
-        if (!module || typeof module !== "object") return;
-        if (module.color) el.style.color = String(module.color);
-        if (Number(module.fontSize) > 0) el.style.fontSize = "calc(" + Number(module.fontSize) + "px * var(--s))";
-        if (module.fontWeight) el.style.fontWeight = String(module.fontWeight);
-        if (module.italic) el.style.fontStyle = "italic";
-      }
-      function statusModule() {
-        var buckets = Array.isArray(state.buckets) ? state.buckets : [];
-        var valid = buckets.find(function (x) { return x && x.remainingPercent != null; });
-        var wrap = document.createElement("div");
-        var label = document.createElement("div"); label.className = "dshwv-label"; label.textContent = valid ? (valid.name || "Codex 额度") : "Codex 订阅额度";
-        var amount = document.createElement("div"); amount.className = "dshwv-amount";
-        amount.textContent = valid ? ("剩余 " + Math.round(Number(valid.remainingPercent)) + "%") : (state.status === "ready" ? "数据不可用" : "—");
-        var hint = document.createElement("div"); hint.className = "dshwv-hint";
-        hint.textContent = valid ? countdown(Number(valid.resetsAt)) : (state.message || "等待查询");
-        wrap.appendChild(label); wrap.appendChild(amount); wrap.appendChild(hint);
-        return wrap;
-      }
-      function renderModule(module) {
-        module = module || {};
-        var kind = module.kind || "text";
-        if (kind === "status" || kind === "dynamic") return statusModule();
-        if (kind === "image" || kind === "gif") {
-          var image = document.createElement("img"); image.className = "dshwv-mimg"; image.alt = module.alt || "";
-          image.src = module.src || module.url || ""; image.draggable = false; applyModuleStyle(image, module); return image;
-        }
-        if (kind === "randomImage") {
-          var choice = weightedChoice((module.options || []).filter(function (x) { return x && (x.src || x.url); }));
-          return choice ? renderModule(Object.assign({}, choice, { kind: "image" })) : textNode("暂无图片");
-        }
-        if (kind === "randomText") {
-          var choice = weightedChoice((module.options || []).filter(function (x) { return x && x.text; }));
-          return textNode(choice ? choice.text : (module.text || ""), "dshwv-trow dshwv-wrap");
-        }
-        if (kind === "link") {
-          var link = document.createElement("a"); link.className = "dshwv-trow dshwv-wrap dshwv-link"; link.textContent = module.text || module.label || "打开链接"; link.href = "#"; link.onclick = function (event) { event.preventDefault(); post("openExternal", { url: module.url || "" }); }; applyModuleStyle(link, module); return link;
-        }
-        var text = textNode(module.text || "", "dshwv-trow dshwv-wrap"); applyModuleStyle(text, module); return text;
-      }
-      function renderBubbleContent() {
-        bubbleContent.innerHTML = "";
-        var step = effectiveSteps()[Math.min(queueIndex, effectiveSteps().length - 1)] || {};
-        var modules = Array.isArray(step.modules) ? step.modules : [step];
-        modules.forEach(function (module) { var el = renderModule(module); if (el) bubbleContent.appendChild(el); });
-        if (!bubbleContent.childNodes.length) bubbleContent.appendChild(statusModule());
-      }
-      function notifyLayout(requestNative) {
-        requestAnimationFrame(function () {
-          var scale = Math.max(.65, Math.min(1.6, Number(state.scale) || 1));
-          var rect = bubble.getBoundingClientRect(), whaleRect = whale.getBoundingClientRect();
-          if (requestNative !== false) post("bubbleLayout", { visible: bubbleOpen, height: Math.max(120, rect.height / scale) });
-          post("layoutMetrics", {
-            innerWidth: window.innerWidth, innerHeight: window.innerHeight,
-            scale: scale, whaleX: whaleRect.x, whaleY: whaleRect.y, whaleW: whaleRect.width, whaleH: whaleRect.height,
-            bubbleX: rect.x, bubbleY: rect.y, bubbleW: rect.width, bubbleH: rect.height
-          });
-        });
-      }
-      function setBubbleVisible(visible, resetTimer) {
-        bubbleOpen = !!visible;
-        bubble.classList.toggle("visible", bubbleOpen);
-        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
-        var seconds = Number(bubbleConfig().closeAfterSeconds || state.bubbleCloseAfterSeconds) || 0;
-        if (bubbleOpen && resetTimer && seconds > 0) closeTimer = setTimeout(function () { setBubbleVisible(false, false); }, seconds * 1000);
-        notifyLayout(true);
-      }
-      function showNextFromWhale() {
-        var config = bubbleConfig(), steps = effectiveSteps();
-        if (!bubbleOpen) {
-          queueIndex = 0; renderBubbleContent(); setBubbleVisible(true, true); return;
-        }
-        if (config.advanceOnClick !== false) {
-          queueIndex += 1;
-          if (queueIndex >= steps.length) { setBubbleVisible(false, false); queueIndex = 0; return; }
-          renderBubbleContent(); setBubbleVisible(true, true); return;
-        }
-        if (config.againAction === "toggle") setBubbleVisible(false, false);
-        else setBubbleVisible(true, true);
-      }
-      function hideContextMenu() { contextMenu.classList.remove("visible"); }
-      function render() {
-        var status = state.status || "idle";
-        app.className = status;
-        var scale = Math.max(.65, Math.min(1.6, Number(state.scale) || 1));
-        document.documentElement.style.setProperty("--s", String(scale));
-        document.documentElement.style.setProperty("--u", String(scale * .2378) + "px");
-        whale.classList.toggle("flip", !!state.flip);
-        menu.style.display = state.showMenuButton === false ? "none" : "block";
-        whale.src = state.roleImage || "DSniang1.png";
-        pressSound.src = state.pressSound || "Ya1.mp3"; releaseSound.src = state.releaseSound || "Ya2.mp3";
-        pressSound.volume = Number(state.soundVolume == null ? .45 : state.soundVolume);
-        releaseSound.volume = pressSound.volume;
-        if (bubbleOpen) renderBubbleContent();
-        updateCountdowns();
-      }
-      function updateCountdowns() {
-        document.querySelectorAll("[data-reset]").forEach(function (el) { el.textContent = countdown(Number(el.dataset.reset) || 0); });
-        (state.buckets || []).forEach(function (item) {
-          var timestamp = Number(item.resetsAt) || 0;
-          if (timestamp && timestamp <= Date.now() && !expiryNotified[timestamp]) { expiryNotified[timestamp] = true; post("refresh"); }
-        });
-      }
-      function endPointer(event, cancelled) {
-        if (!pointer) return;
-        var current = pointer; pointer = null; whale.classList.remove("pressed");
-        if (event && whale.hasPointerCapture && whale.hasPointerCapture(current.id)) whale.releasePointerCapture(current.id);
-        if (!cancelled && state.soundEnabled) { releaseSound.currentTime = 0; releaseSound.play().catch(function () {}); }
-        post("dragEnd", { moved: current.moved });
-        if (!cancelled && !current.moved) { showNextFromWhale(); post("refresh"); }
-      }
-      window.__AIWhale = {
-        update: function (next) {
-          var wasOpen = bubbleOpen;
-          state = Object.assign({}, defaults, next || {});
-          if (!state.bubble || typeof state.bubble !== "object") state.bubble = JSON.parse(JSON.stringify(defaults.bubble));
-          render();
-          if (wasOpen) setBubbleVisible(true, false);
-        },
-        setLayout: function (layout) {
-          layout = layout || {};
-          if (layout.scale) document.documentElement.style.setProperty("--s", String(layout.scale));
-          if (layout.heightBase) document.documentElement.style.setProperty("--h", String(layout.heightBase));
-          notifyLayout(false);
-        },
-        toggleBubble: function () { if (bubbleOpen) setBubbleVisible(false, false); else showNextFromWhale(); }
-      };
-      whale.addEventListener("dragstart", function (event) { event.preventDefault(); });
-      whale.addEventListener("contextmenu", function (event) {
-        event.preventDefault(); event.stopPropagation(); hideContextMenu();
-        var x = Math.max(4, Math.min(window.innerWidth - 202, event.clientX - 6));
-        var y = Math.max(4, Math.min(window.innerHeight - 176, event.clientY - 6));
-        contextMenu.style.left = x + "px"; contextMenu.style.top = y + "px"; contextMenu.classList.add("visible");
+      (body.groups || []).forEach(function (item) {
+        if (!item || !item.id) return;
+        if (item.pressURL) resourceURLs.audio["press:" + item.id] = item.pressURL;
+        if (item.releaseURL) resourceURLs.audio["release:" + item.id] = item.releaseURL;
       });
-      document.addEventListener("pointerdown", function (event) { if (!contextMenu.contains(event.target) && event.target !== whale) hideContextMenu(); });
-      contextMenu.addEventListener("click", function (event) {
-        var item = event.target.closest("button"); if (!item) return;
-        hideContextMenu();
-        var action = item.dataset.action, page = item.dataset.page;
-        if (page) post("openSettings", { page: page });
-        else if (action === "toggle") { if (bubbleOpen) setBubbleVisible(false, false); else showNextFromWhale(); }
-        else if (action === "refresh") { setBubbleVisible(true, false); post("refresh"); }
-        else if (action === "restore") post("restoreDisplay");
-      });
-      whale.addEventListener("pointerdown", function (event) {
-        if (event.button !== 0 || pointer) return;
-        event.preventDefault(); hideContextMenu();
-        pointer = { id: event.pointerId, startX: event.screenX, startY: event.screenY, lastX: event.screenX, lastY: event.screenY, moved: false, captureLost: false };
-        try { whale.setPointerCapture(event.pointerId); } catch (e) {}
-        whale.classList.add("pressed");
-        if (state.soundEnabled) { pressSound.currentTime = 0; pressSound.play().catch(function () {}); }
-        post("dragStart");
-      });
-      whale.addEventListener("pointermove", function (event) {
-        if (!pointer || pointer.id !== event.pointerId) return;
-        var totalX = event.screenX - pointer.startX, totalY = event.screenY - pointer.startY;
-        if (!pointer.moved && Math.hypot(totalX, totalY) >= 6) pointer.moved = true;
-        if (pointer.moved) post("dragMove", { dx: event.screenX - pointer.lastX, dy: event.screenY - pointer.lastY });
-        pointer.lastX = event.screenX; pointer.lastY = event.screenY;
-      });
-      whale.addEventListener("pointerup", function (event) { if (pointer && pointer.id === event.pointerId) endPointer(event, false); });
-      whale.addEventListener("pointercancel", function (event) { if (pointer && pointer.id === event.pointerId) endPointer(event, true); });
-      whale.addEventListener("lostpointercapture", function () { if (!pointer) return; pointer.captureLost = true; setTimeout(function () { if (pointer && pointer.captureLost) endPointer(null, true); }, 150); });
-      window.addEventListener("blur", function () { if (pointer) endPointer(null, true); });
-      menu.addEventListener("click", function () { post("openSettings", { page: "general" }); });
-      render();
-      setBubbleVisible(false, false);
-      setInterval(updateCountdowns, 1000);
-      post("ready");
-    }());
-  </script>
+    }
+  }
+  window.__AIWhaleHostResponse = function (id, status, body) {
+    var item = pending[String(id)];
+    if (!item) return;
+    delete pending[String(id)];
+    mergeResources(item.path, body);
+    item.resolve(new Response(JSON.stringify(body == null ? {} : body), { status: Number(status) || 500, headers: { "Content-Type": "application/json" } }));
+  };
+  function hostFetch(input, options) {
+    options = options || {};
+    var raw = typeof input === "string" ? input : (input && input.url) || "";
+    var url;
+    try { url = new URL(raw, location.href); } catch (error) { return Promise.reject(error); }
+    if (url.pathname.indexOf("/dsh-whale/") !== 0) return window.__AIWhaleNativeFetch(input, options);
+    var id = "host-" + (++requestSerial);
+    var method = String(options.method || "GET").toUpperCase();
+    var body = options.body || null;
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { delete pending[id]; reject(new Error("本地数据请求超时")); }, 30000);
+      pending[id] = { path: url.pathname + url.search, resolve: function (response) { clearTimeout(timer); resolve(response); }, reject: function (error) { clearTimeout(timer); reject(error); } };
+      post("hostRequest", { requestId: id, method: method, path: url.pathname + url.search, body: body });
+    });
+  }
+  window.__AIWhaleNativeFetch = window.fetch.bind(window);
+  window.fetch = hostFetch;
+  window.__AIWhale = {
+    update: function (next) {
+      window.__AIWhaleState = Object.assign({}, window.__AIWhaleState || {}, next || {});
+      if (next && next.roleImage) resourceURLs.roles.default = next.roleImage;
+      if (window.__AIWhaleHostDataUpdated) window.__AIWhaleHostDataUpdated();
+    },
+    setLayout: function (layout) {
+      layout = layout || {};
+      var scale = Number(layout.scale); if (!isFinite(scale) || scale <= 0) scale = 1;
+      var height = Number(layout.height); if (!isFinite(height) || height <= 0) height = 184;
+      document.documentElement.style.setProperty("--ai-scale", String(scale));
+      document.documentElement.style.setProperty("--ai-content-height", String(height / scale));
+      var root = document.querySelector(".dshwv-root");
+      if (root) { root.style.setProperty("--dshw-base", (248 * scale) + "px", "important"); root.style.setProperty("--dshw-scale", String(scale)); }
+      if (window.__AIWhaleLayoutUpdated) window.__AIWhaleLayoutUpdated(layout);
+    },
+    toggleBubble: function () {
+      var root = document.querySelector(".dshwv-root");
+      if (root && root.__dshwHideBubble && root.querySelector(".dshwv-pop-open")) root.__dshwHideBubble();
+      else if (root && root.__dshwToggleBubble) root.__dshwToggleBubble();
+    }
+  };
+  function reportLayout() {
+    requestAnimationFrame(function () {
+      var root = document.querySelector(".dshwv-root"), whale = document.querySelector(".dshwv-img"), bubble = document.querySelector(".dshwv-pop");
+      if (!root || !whale || !bubble) return;
+      var rr = root.getBoundingClientRect(), wr = whale.getBoundingClientRect(), br = bubble.getBoundingClientRect();
+      post("bubbleLayout", { embedded: true, visible: bubble.classList.contains("dshwv-pop-open"), height: 184, innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height });
+    });
+  }
+  window.__AIWhaleHostDataUpdated = function () { var s = window.__AIWhaleState || {}; var image = document.querySelector(".dshwv-img"); if (image && s.roleImage && image.getAttribute("src") !== s.roleImage) image.src = s.roleImage; var root = document.querySelector(".dshwv-root"); if (root) root.classList.toggle("dshwv-left", !!s.flip); window.dispatchEvent(new Event("aiwhale-data")); reportLayout(); }
+  window.__AIWhaleLayoutUpdated = reportLayout;
+  window.addEventListener("load", function () { post("ready"); reportLayout(); });
+  var observer = new MutationObserver(reportLayout);
+  observer.observe(document.documentElement, { subtree: true, attributes: true, childList: true });
+  window.addEventListener("resize", reportLayout);
+}());
+</script>
+<script src="whale-widget.js"></script>
 </body>
 </html>

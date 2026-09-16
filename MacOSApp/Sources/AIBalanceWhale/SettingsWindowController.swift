@@ -11,10 +11,13 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
     var connectionState: (() -> ProviderState)?
 
     private let webView: WKWebView
+    private let hostAdapter: WhaleHostAdapter
     private var ready = false
+    private var pendingBridgeScripts: [String] = []
     private var requestedPage = "general"
 
-    init() {
+    init(hostOwner: WhaleWindowController? = nil) {
+        hostAdapter = WhaleHostAdapter(owner: hostOwner)
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let controller = WKUserContentController()
@@ -37,6 +40,7 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
 
         view.autoresizingMask = [.width, .height]
         controller.add(self, name: "settings")
+        controller.add(self, name: "bridge")
         view.navigationDelegate = self
         load()
     }
@@ -44,6 +48,8 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func load() {
+        ready = false
+        pendingBridgeScripts.removeAll()
         guard let url = Bundle.main.url(forResource: "Settings", withExtension: "html") else {
             webView.loadHTMLString("<html><body>缺少 Settings.html</body></html>", baseURL: nil)
             return
@@ -62,6 +68,18 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "bridge", let body = message.body as? [String: Any], let type = body["type"] as? String {
+            if type == "hostRequest", let requestID = body["requestId"] as? String, let method = body["method"] as? String, let path = body["path"] as? String {
+                let result = hostAdapter.handle(method: method, rawPath: path, body: body["body"])
+                if let data = try? JSONSerialization.data(withJSONObject: result.1), let encoded = String(data: data, encoding: .utf8) {
+                    let script = "window.__AIWhaleHostResponse && window.__AIWhaleHostResponse(\(json(requestID)),\(result.0),\(encoded))"
+                    if ready { sendJavaScript(script) } else { pendingBridgeScripts.append(script) }
+                }
+            } else if type == "openExternal", let raw = body["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
         guard message.name == "settings",
               let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
@@ -71,6 +89,9 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             ready = true
             sendPayload()
             sendPageSelection()
+            let pending = pendingBridgeScripts
+            pendingBridgeScripts.removeAll()
+            pending.forEach { sendJavaScript($0) }
         case "saveConfig":
             guard let config = body["config"] as? [String: Any] else { return }
             WhaleConfigurationStore.shared.save(config)
@@ -141,8 +162,8 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
         }
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        ready = false
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // The page may send ready before WebKit delivers didFinish; never clear it here.
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
