@@ -33,7 +33,7 @@ jobs:
         run: bash MacOSApp/scripts/verify-source.sh
       - name: Build ad-hoc arm64 App
         env:
-          APP_VERSION: 0.1.0-beta.7
+          APP_VERSION: 0.1.0-beta.8
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_MODE: ad-hoc
         run: MacOSApp/scripts/build.sh

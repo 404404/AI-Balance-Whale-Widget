@@ -98,21 +98,36 @@ html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
       var root = document.querySelector(".dshwv-root");
       if (root && root.__dshwHideBubble && root.querySelector(".dshwv-pop-open")) root.__dshwHideBubble();
       else if (root && root.__dshwToggleBubble) root.__dshwToggleBubble();
+    },
+    nativePointerDown: function () {
+      var root = document.querySelector(".dshwv-root")
+      if (root && root.__dshwNativePointerDown) root.__dshwNativePointerDown()
+    },
+    nativePointerUp: function (moved) {
+      var root = document.querySelector(".dshwv-root")
+      if (root && root.__dshwNativePointerUp) root.__dshwNativePointerUp(!!moved)
+    },
+    nativeContextMenu: function () {
+      var root = document.querySelector(".dshwv-root")
+      if (root && root.__dshwNativeContextMenu) root.__dshwNativeContextMenu()
     }
   };
+  var lastLayoutSignature = "";
   function reportLayout() {
     requestAnimationFrame(function () {
       var root = document.querySelector(".dshwv-root"), whale = document.querySelector(".dshwv-img"), bubble = document.querySelector(".dshwv-pop");
       if (!root || !whale || !bubble) return;
       var rr = root.getBoundingClientRect(), wr = whale.getBoundingClientRect(), br = bubble.getBoundingClientRect();
-      post("bubbleLayout", { embedded: true, visible: bubble.classList.contains("dshwv-pop-open"), height: 184, innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height });
+      var visible = bubble.classList.contains("dshwv-pop-open");
+      var signature = [visible, rr.width, rr.height, wr.x, wr.y, wr.width, wr.height, br.x, br.y, br.width, br.height].map(function (x) { return Number(x).toFixed(2) }).join("/");
+      if (signature === lastLayoutSignature) return;
+      lastLayoutSignature = signature;
+      post("bubbleLayout", { embedded: true, visible: visible, height: 184, innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height });
     });
   }
   window.__AIWhaleHostDataUpdated = function () { var s = window.__AIWhaleState || {}; var image = document.querySelector(".dshwv-img"); if (image && s.roleImage && image.getAttribute("src") !== s.roleImage) image.src = s.roleImage; var root = document.querySelector(".dshwv-root"); if (root) root.classList.toggle("dshwv-left", !!s.flip); window.dispatchEvent(new Event("aiwhale-data")); reportLayout(); }
   window.__AIWhaleLayoutUpdated = reportLayout;
   window.addEventListener("load", function () { post("ready"); reportLayout(); });
-  var observer = new MutationObserver(reportLayout);
-  observer.observe(document.documentElement, { subtree: true, attributes: true, childList: true });
   window.addEventListener("resize", reportLayout);
 }());
 </script>
