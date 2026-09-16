@@ -195,7 +195,6 @@ final class WidgetWebViewTests: XCTestCase {
         let packageRoot = testsDirectory
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
         let sourceRoot = packageRoot.deletingLastPathComponent()
         let tempRoot = fileManager.temporaryDirectory.appendingPathComponent("AIWhale-WebKit-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
