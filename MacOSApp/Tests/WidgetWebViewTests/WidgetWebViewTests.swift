@@ -113,10 +113,12 @@ final class WidgetWebViewTests: XCTestCase {
         let result = try await evaluate(webView, """
           (function () {
             window.__AIWhaleSettings.selectPage('bubbles')
-            window.__AIWhaleEditorAPI.openBubbleEditor()
+            var editorMask = document.querySelector('#upstreamEditorMount .dshwv-bubmask')
             return {
               editor: Boolean(window.__AIWhaleEditorAPI),
-              mask: Boolean(document.querySelector('#upstreamEditorMount .dshwv-bubmask')),
+              // Do not call the editor API here: navigating from the app's own
+              // settings sidebar must already expose the upstream editor.
+              mask: Boolean(editorMask && getComputedStyle(editorMask).display === 'flex'),
               rootHidden: getComputedStyle(document.querySelector('.dshwv-root')).display === 'none',
               iframe: Boolean(document.querySelector('iframe'))
             }
