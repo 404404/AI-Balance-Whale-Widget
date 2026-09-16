@@ -3,15 +3,21 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HTML="$ROOT/MacOSApp/Resources/WhaleWidget.html"
+ASSET="$ROOT/assets/whale-widget.js"
 SETTINGS="$ROOT/MacOSApp/Resources/Settings.html"
 WINDOW="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleWindowController.swift"
 STORE="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleConfigurationStore.swift"
+HOST="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleHostAdapter.swift"
+CODEX="$ROOT/MacOSApp/Sources/AIBalanceWhale/CodexAppServerClient.swift"
 
-for pattern in 'contextmenu' 'pointerup' 'pointercancel' 'dragEnd' 'setLayout' 'overflow: hidden' 'navigationToken' 'bubbleLayout' 'dshwv-bshape' 'dshwv-b1' 'dshwv-b2' 'height: calc(var(--h) * 1px * var(--s))' 'px * var(--s)' 'restoreDisplay' 'imageState'; do
-  grep -Fq "$pattern" "$HTML" || { echo "missing WhaleWidget pattern: $pattern" >&2; exit 1; }
+for pattern in "__AIWhaleStandalone" "__AIWhaleHostResponse" "navigationToken" "bubbleLayout" "whale-widget.js"; do
+  grep -Fq "$pattern" "$HTML" || { echo "missing standalone WhaleWidget pattern: $pattern" >&2; exit 1; }
 done
-for pattern in 'data-page="general"' 'data-page="models"' 'data-page="resources"' 'data-page="bubbles"' 'data-page="sounds"' 'data-page="reminders"' 'data-page="about"' 'messageHandlers.settings' 'saveCredential' 'importResource'; do
-  grep -Fq "$pattern" "$SETTINGS"
+for pattern in "contextmenu" "pointerup" "pointercancel" "dshwv-bshape" "dshwv-b1" "dshwv-b2" "BUBBLE_DEFAULT_ITEMS" "bubblePickLine" "bubblePlanWinOptions" "__AIWhaleStandalone"; do
+  grep -Fq "$pattern" "$ASSET" || { echo "missing upstream asset pattern: $pattern" >&2; exit 1; }
+done
+for pattern in 'data-page="general"' 'data-page="models"' 'data-page="resources"' 'data-page="bubbles"' 'data-page="sounds"' 'data-page="reminders"' 'data-page="about"' 'messageHandlers.settings' 'saveCredential' 'importResource' 'WhaleWidget.html#upstream-settings'; do
+  grep -Fq "$pattern" "$SETTINGS" || { echo "missing settings pattern: $pattern" >&2; exit 1; }
 done
 grep -Fq 'WhaleLayout.contentSize' "$WINDOW"
 grep -Fq 'saved.width - newSize.width' "$WINDOW"
@@ -22,5 +28,9 @@ grep -Fq 'Application Support' "$SETTINGS"
 grep -Fq 'Keychain' "$SETTINGS"
 grep -Fq 'schemaVersion' "$STORE"
 grep -Fq 'builtin-dsniang' "$STORE"
+grep -Fq 'account/rateLimits/read' "$CODEX"
+grep -Fq 'upstreamBubble' "$HOST"
+grep -Fq 'upload-fragment' "$HOST"
+grep -Fq 'saveCredential' "$HOST"
 test -s "$SETTINGS"
 echo "source regression checks passed"

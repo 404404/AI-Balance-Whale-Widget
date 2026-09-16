@@ -44,29 +44,29 @@ final class WidgetWebViewTests: XCTestCase {
         try await waitForJavaScript(webView)
 
         for scale in [0.65, 1.0, 1.6] {
-            _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:\(scale), heightBase:184})")
+            _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:\(scale), height:\(184 * scale)})")
             try await Task.sleep(nanoseconds: 80_000_000)
             let metrics = try await widgetMetrics(webView)
             assertVisible(metrics, expectedHeight: 184 * scale, label: "compact scale \(scale)")
             print("WHALE_WEBKIT_GEOMETRY compact scale=\(scale) app=\(rect(metrics, "app")) whale=\(rect(metrics, "whale")) computedHeight=\(metrics["computedHeight"] ?? "?")")
         }
 
-        _ = try await evaluate(webView, "window.__AIWhale.update({status:'ready',buckets:[{name:'Codex',remainingPercent:72}]}); window.__AIWhale.toggleBubble(); window.__AIWhale.setLayout({scale:1,heightBase:346})")
+        _ = try await evaluate(webView, "window.__AIWhale.toggleBubble()")
         try await Task.sleep(nanoseconds: 180_000_000)
         let expanded = try await widgetMetrics(webView)
-        assertVisible(expanded, expectedHeight: 346, label: "expanded bubble")
+        assertVisible(expanded, expectedHeight: 184, label: "expanded bubble")
         XCTAssertEqual(expanded["bubbleVisible"] as? Bool, true)
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
         print("WHALE_WEBKIT_GEOMETRY expanded app=\(rect(expanded, "app")) whale=\(rect(expanded, "whale")) bubble=\(rect(expanded, "bubble"))")
 
-        _ = try await evaluate(webView, "window.__AIWhale.toggleBubble(); window.__AIWhale.setLayout({scale:1,heightBase:184})")
+        _ = try await evaluate(webView, "window.__AIWhale.toggleBubble()")
         try await Task.sleep(nanoseconds: 100_000_000)
         let collapsed = try await widgetMetrics(webView)
         assertVisible(collapsed, expectedHeight: 184, label: "collapsed bubble")
         XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, false)
         print("WHALE_WEBKIT_GEOMETRY collapsed app=\(rect(collapsed, "app")) whale=\(rect(collapsed, "whale"))")
 
-        _ = try await evaluate(webView, "window.__AIWhale.update({roleImage:'missing-custom-role.png'})")
+        _ = try await evaluate(webView, "document.querySelector(\".dshwv-img\").src = \"missing-custom-role.png\"")
         try await waitForImage(webView)
         let fallback = try await widgetMetrics(webView)
         XCTAssertEqual(fallback["imageComplete"] as? Bool, true)
@@ -79,9 +79,9 @@ final class WidgetWebViewTests: XCTestCase {
     private func widgetMetrics(_ webView: WKWebView) async throws -> [String: Any] {
         let script = """
         (function () {
-          var app = document.getElementById('app');
-          var whale = document.getElementById('whale');
-          var bubble = document.getElementById('bubble');
+          var app = document.querySelector('.dshwv-root');
+          var whale = document.querySelector('.dshwv-img');
+          var bubble = document.querySelector('.dshwv-pop');
           function rect(el) {
             var r = el.getBoundingClientRect();
             return {x:r.x, y:r.y, width:r.width, height:r.height,
@@ -102,7 +102,7 @@ final class WidgetWebViewTests: XCTestCase {
             app: rect(app),
             whale: rect(whale),
             bubble: rect(bubble),
-            bubbleVisible: getComputedStyle(bubble).visibility === 'visible',
+            bubbleVisible: bubble.classList.contains('dshwv-pop-open'),
             ancestorsVisible: visibleAncestors(whale),
             imageComplete: whale.complete,
             naturalWidth: whale.naturalWidth,
@@ -162,7 +162,7 @@ final class WidgetWebViewTests: XCTestCase {
 
     private func waitForJavaScript(_ webView: WKWebView) async throws {
         for _ in 0..<20 {
-            let ready = try await evaluate(webView, "Boolean(window.__AIWhale)")
+            let ready = try await evaluate(webView, "Boolean(document.querySelector('.dshwv-img'))")
             if (ready as? Bool) == true { return }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -199,7 +199,7 @@ final class WidgetWebViewTests: XCTestCase {
         let tempRoot = fileManager.temporaryDirectory.appendingPathComponent("AIWhale-WebKit-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         try fileManager.copyItem(at: packageRoot.appendingPathComponent("Resources/WhaleWidget.html"), to: tempRoot.appendingPathComponent("WhaleWidget.html"))
-        for name in ["DSniang1.png", "Ya1.mp3", "Ya2.mp3"] {
+        for name in ["DSniang1.png", "Ya1.mp3", "Ya2.mp3", "whale-widget.js", "rua.gif", "bubble-petpet.gif"] {
             let source = sourceRoot.appendingPathComponent("assets").appendingPathComponent(name)
             if fileManager.fileExists(atPath: source.path) {
                 try fileManager.copyItem(at: source, to: tempRoot.appendingPathComponent(name))

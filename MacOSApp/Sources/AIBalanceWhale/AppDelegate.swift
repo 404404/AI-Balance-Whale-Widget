@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings(_ sender: Any? = nil) {
         if settingsWindow == nil {
-            let controller = SettingsWindowController()
+            let controller = SettingsWindowController(hostOwner: whaleWindow)
             controller.connectionState = { [weak self] in self?.latestProviderState ?? ProviderState() }
             controller.onAppearanceChanged = { [weak self] in
                 guard let self else { return }
@@ -174,6 +174,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.whaleWindow?.clampAndSave()
         }
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings(_:)), name: .aiWhaleOpenSettings, object: nil)
+        NotificationCenter.default.addObserver(forName: .aiWhaleProviderConfigurationChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.externalProvider.refresh()
+            if let self { self.whaleWindow?.render(self.latestProviderState, externalBalances: self.latestExternalBalances) }
+        }
     }
 
     @objc private func openHelp(_ sender: Any? = nil) { open("https://github.com/404404/AI-Balance-Whale-Widget#ai-balance-whale-macos") }
