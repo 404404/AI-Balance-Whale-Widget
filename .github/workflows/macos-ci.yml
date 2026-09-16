@@ -33,10 +33,14 @@ jobs:
         run: bash MacOSApp/scripts/verify-source.sh
       - name: Build ad-hoc arm64 App
         env:
-          APP_VERSION: 0.1.0-beta.5
+          APP_VERSION: 0.1.0-beta.6
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_MODE: ad-hoc
         run: MacOSApp/scripts/build.sh
+      - name: Run packaged WKWebView geometry tests
+        env:
+          WHALE_WIDGET_RESOURCE_ROOT: MacOSApp/dist/AI Balance Whale.app/Contents/Resources
+        run: swift test --package-path MacOSApp --filter WidgetWebViewTests
       - name: Verify App bundle
         run: |
           APP="MacOSApp/dist/AI Balance Whale.app"

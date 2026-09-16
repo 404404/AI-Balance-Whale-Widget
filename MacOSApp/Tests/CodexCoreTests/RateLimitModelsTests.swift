@@ -59,7 +59,8 @@ final class RateLimitModelsTests: XCTestCase {
         XCTAssertEqual(compact.height, 184)
         XCTAssertEqual(small.height, 184 * 0.65, accuracy: 0.001)
         XCTAssertEqual(large.height, 184 * 1.6, accuracy: 0.001)
-        XCTAssertEqual(WidgetLayoutModel.preservedBottomOrigin(oldMinY: 100, oldHeight: 274, newHeight: 184), 190)
+        // AppKit origin is the bottom-left corner; resizing upward preserves y = 100.
+        XCTAssertEqual(WidgetLayoutModel.preservedBottomOrigin(oldMinY: 100, oldHeight: 274, newHeight: 184), 100)
     }
 
     func testBubbleExpansionIsCalculatedFromMeasuredHeight() {

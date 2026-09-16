@@ -72,7 +72,10 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         refreshRequestedForGeneration = 0
         recordDebug("navigation started \(navigationToken)")
 
-        guard let html = Bundle.main.url(forResource: "WhaleWidget", withExtension: "html") else {
+        let builtinWhale = Bundle.main.url(forResource: "DSniang1", withExtension: "png")
+        let htmlResource = Bundle.main.url(forResource: "WhaleWidget", withExtension: "html")
+        recordDebug("resources html=" + String(htmlResource != nil) + " builtinWhale=" + String(builtinWhale != nil))
+        guard let html = htmlResource else {
             recordDebug("missing WhaleWidget.html")
             activeNavigation = webView.loadHTMLString(
                 "<html><body style='background:transparent'>AI Balance Whale</body></html>",
@@ -115,6 +118,25 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         renderCurrentState()
     }
 
+    /// Recover only the widget presentation state. Account, Codex and user content
+    /// preferences are deliberately left untouched.
+    func restoreDisplay() {
+        AppPreferences.shared.mousePassthrough = false
+        bubbleVisible = false
+        bubbleHeight = WhaleLayout.defaultBubbleHeight
+        window?.setFrame(defaultFrame(), display: true)
+        clampAndSave()
+        applyPreferences()
+        if !scriptsReady {
+            load()
+        } else {
+            sendLayout()
+            renderCurrentState()
+        }
+        show()
+        recordDebug("display restored")
+    }
+
     func openSettings(page: String? = nil) {
         NotificationCenter.default.post(
             name: .aiWhaleOpenSettings,
@@ -151,6 +173,8 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             evaluate("window.__AIWhale && window.__AIWhale.toggleBubble()")
         case "restoreLayout":
             resetPositionAndSize()
+        case "restoreDisplay":
+            restoreDisplay()
         case "bubbleLayout":
             let visible = (body["visible"] as? NSNumber)?.boolValue ?? bubbleVisible
             let requestedHeight = CGFloat((body["height"] as? NSNumber)?.doubleValue ?? Double(bubbleHeight))
@@ -159,6 +183,8 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             resizeToCurrentLayout(preserveAnchor: true)
         case "layoutMetrics":
             recordMetrics(body)
+        case "imageState":
+            recordImageState(body)
         case "openExternal":
             guard let raw = body["url"] as? String,
                   let url = URL(string: raw),
@@ -313,7 +339,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         if nearRight { frame.origin.x += saved.width - newSize.width }
         else if !nearLeft { frame.origin.x += (saved.width - newSize.width) / 2 }
         // NSWindow uses a bottom-left origin. Keep the bottom whale anchor.
-        frame.origin.y = saved.maxY - newSize.height
+        frame.origin.y = saved.minY
         panel.setFrame(frame, display: false)
         clampAndSave()
     }
@@ -353,7 +379,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             if isRightAttached { frame.origin.x = old.maxX - newSize.width }
             else if !isLeftAttached { frame.origin.x = old.midX - newSize.width / 2 }
             // Expand upwards and keep the bottom-center whale anchor fixed.
-            frame.origin.y = old.maxY - newSize.height
+            frame.origin.y = old.minY
         }
         panel.setFrame(frame, display: false)
         clampAndSave()
@@ -455,6 +481,14 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             return String(format: "%.1f", value.doubleValue)
         }
         recordDebug("metrics inner=\(number("innerWidth"))x\(number("innerHeight")) whale=\(number("whaleX")),\(number("whaleY")),\(number("whaleW"))x\(number("whaleH")) bubble=\(number("bubbleX")),\(number("bubbleY")),\(number("bubbleW"))x\(number("bubbleH"))")
+    }
+
+    private func recordImageState(_ body: [String: Any]) {
+        let complete = (body["complete"] as? NSNumber)?.boolValue ?? false
+        let width = (body["naturalWidth"] as? NSNumber)?.intValue ?? 0
+        let height = (body["naturalHeight"] as? NSNumber)?.intValue ?? 0
+        let fallback = (body["fallback"] as? NSNumber)?.boolValue ?? false
+        recordDebug("image complete=\(complete) natural=\(width)x\(height) fallback=\(fallback)")
     }
 
     private func recordDebug(_ event: String) {

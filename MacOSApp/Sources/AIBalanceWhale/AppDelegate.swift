@@ -81,6 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshNow(_ sender: Any? = nil) { provider.refresh(); externalProvider.refresh() }
 
+    @objc private func restoreDisplay(_ sender: Any? = nil) {
+        whaleWindow.restoreDisplay()
+        updateMenuTitles()
+    }
+
     @objc private func togglePassthrough(_ sender: NSMenuItem) {
         AppPreferences.shared.mousePassthrough.toggle()
         whaleWindow.applyPreferences()
@@ -124,11 +129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("置顶", #selector(toggleAlwaysOnTop(_:)), tag: 4))
         menu.addItem(menuItem("跨桌面 / 全屏辅助", #selector(toggleAllSpaces(_:)), tag: 5))
         menu.addItem(.separator())
-        menu.addItem(menuItem("设置…", #selector(openSettings(_:)), tag: 6))
-        menu.addItem(menuItem("打开帮助", #selector(openHelp(_:)), tag: 7))
-        menu.addItem(menuItem("问题反馈", #selector(openFeedback(_:)), tag: 8))
+        menu.addItem(menuItem("恢复人偶显示", #selector(restoreDisplay(_:)), tag: 6))
+        menu.addItem(menuItem("设置…", #selector(openSettings(_:)), tag: 7))
+        menu.addItem(menuItem("打开帮助", #selector(openHelp(_:)), tag: 8))
+        menu.addItem(menuItem("问题反馈", #selector(openFeedback(_:)), tag: 9))
         menu.addItem(.separator())
-        menu.addItem(menuItem("退出 AI Balance Whale", #selector(quit(_:)), tag: 9))
+        menu.addItem(menuItem("退出 AI Balance Whale", #selector(quit(_:)), tag: 10))
         statusItem.menu = menu
         updateMenuTitles()
     }

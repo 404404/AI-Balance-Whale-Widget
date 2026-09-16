@@ -7,7 +7,7 @@
   <style>
     :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; --s: 1; --h: 184; --u: 1px; }
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
-    #app { position: relative; width: calc(248px * var(--s)); height: calc(var(--h) * var(--s)); pointer-events: none; overflow: hidden; }
+    #app { position: relative; width: calc(248px * var(--s)); height: calc(var(--h) * 1px * var(--s)); pointer-events: none; overflow: hidden; }
     #whale-area { position: absolute; left: 0; bottom: 0; width: calc(248px * var(--s)); height: calc(174px * var(--s)); pointer-events: none; }
     #whale { position: absolute; left: calc(32px * var(--s)); bottom: 0; width: calc(184px * var(--s)); height: calc(174px * var(--s)); object-fit: contain; object-position: center bottom; display: block; pointer-events: auto; cursor: grab; touch-action: none; -webkit-user-drag: none; user-select: none; transform-origin: 50% 100%; transition: transform .12s ease; }
     #whale.pressed { transform: scale(.94, .9); cursor: grabbing; }
@@ -99,6 +99,21 @@
       var lastRandom = null, expiryNotified = {};
       var pressSound = new Audio("Ya1.mp3"), releaseSound = new Audio("Ya2.mp3");
       pressSound.volume = .45; releaseSound.volume = .45;
+      var fallbackRoleActive = false;
+      function reportWhaleImage() {
+        post("imageState", { complete: !!whale.complete, naturalWidth: whale.naturalWidth || 0, naturalHeight: whale.naturalHeight || 0, fallback: fallbackRoleActive });
+      }
+      whale.addEventListener("load", reportWhaleImage);
+      whale.addEventListener("error", function () {
+        if (!fallbackRoleActive && whale.getAttribute("src") !== "DSniang1.png") {
+          fallbackRoleActive = true;
+          state.roleImage = "DSniang1.png";
+          whale.src = "DSniang1.png";
+        }
+        reportWhaleImage();
+      });
+
+      if (whale.complete) reportWhaleImage();
 
       function post(type, payload) {
         var message = Object.assign({ type: type, navigationToken: token }, payload || {});
@@ -149,7 +164,7 @@
       function applyModuleStyle(el, module) {
         if (!module || typeof module !== "object") return;
         if (module.color) el.style.color = String(module.color);
-        if (Number(module.fontSize) > 0) el.style.fontSize = "calc(" + Number(module.fontSize) + " * var(--s))";
+        if (Number(module.fontSize) > 0) el.style.fontSize = "calc(" + Number(module.fontSize) + "px * var(--s))";
         if (module.fontWeight) el.style.fontWeight = String(module.fontWeight);
         if (module.italic) el.style.fontStyle = "italic";
       }
@@ -288,7 +303,7 @@
         if (page) post("openSettings", { page: page });
         else if (action === "toggle") { if (bubbleOpen) setBubbleVisible(false, false); else showNextFromWhale(); }
         else if (action === "refresh") { setBubbleVisible(true, false); post("refresh"); }
-        else if (action === "restore") post("restoreLayout");
+        else if (action === "restore") post("restoreDisplay");
       });
       whale.addEventListener("pointerdown", function (event) {
         if (event.button !== 0 || pointer) return;

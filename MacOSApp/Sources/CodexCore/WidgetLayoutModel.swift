@@ -22,8 +22,11 @@ public enum WidgetLayoutModel {
         return (width * factor, baseHeight(bubbleVisible: bubbleVisible, bubbleHeight: bubbleHeight) * factor)
     }
 
+    /// Returns the new AppKit origin that keeps the window bottom edge fixed.
+    /// NSWindow uses a bottom-left origin, so resizing upward does not add the
+    /// old height or subtract the new height.
     public static func preservedBottomOrigin(oldMinY: Double, oldHeight: Double, newHeight: Double) -> Double {
-        oldMinY + oldHeight - newHeight
+        oldMinY
     }
 }
 
