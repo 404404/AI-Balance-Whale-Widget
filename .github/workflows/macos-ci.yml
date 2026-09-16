@@ -39,7 +39,7 @@ jobs:
         run: MacOSApp/scripts/build.sh
       - name: Run packaged WKWebView geometry tests
         env:
-          WHALE_WIDGET_RESOURCE_ROOT: MacOSApp/dist/AI Balance Whale.app/Contents/Resources
+          WHALE_WIDGET_RESOURCE_ROOT: ${{ github.workspace }}/MacOSApp/dist/AI Balance Whale.app/Contents/Resources
         run: swift test --package-path MacOSApp --filter WidgetWebViewTests
       - name: Verify App bundle
         run: |
