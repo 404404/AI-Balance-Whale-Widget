@@ -132,6 +132,7 @@ final class WidgetWebViewTests: XCTestCase {
             settings: Boolean(window.__AIWhaleSettings),
             mount: Boolean(document.querySelector('#upstreamEditorMount')),
             maskCount: document.querySelectorAll('.dshwv-bubmask').length,
+            maskParents: Array.from(document.querySelectorAll('.dshwv-bubmask')).map(function(x){return x.parentElement && x.parentElement.id || ''}),
             openError: window.__AIWhaleEditorOpenError || '',
             errors: window.__AIWhaleTestErrors || []
           })
