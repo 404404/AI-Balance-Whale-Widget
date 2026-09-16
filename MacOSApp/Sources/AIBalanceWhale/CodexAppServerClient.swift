@@ -366,7 +366,8 @@ final class CodexAppServerClient {
                 state.planType = planType
                 state.buckets = []
                 state.lastUpdated = nil
-                cache = key.flatMap { cache?.accountKey == $0 ? cache : nil }
+                let cached = self.cache
+                self.cache = key.flatMap { cached?.accountKey == $0 ? cached : nil }
             }
             state.email = email
             state.planType = planType
