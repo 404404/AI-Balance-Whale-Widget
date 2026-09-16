@@ -88,6 +88,11 @@ final class WidgetWebViewTests: XCTestCase {
         let settings = resourceRoot.appendingPathComponent("Settings.html")
         let configuration = WKWebViewConfiguration()
         let bridge = SettingsBridge()
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.__AIWhaleTestErrors=[];window.addEventListener('error',function(e){window.__AIWhaleTestErrors.push(String(e.message||e.error||'error'))},true)",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         configuration.userContentController.add(bridge, name: "settings")
         configuration.userContentController.add(bridge, name: "bridge")
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 920, height: 680), configuration: configuration)
@@ -116,6 +121,19 @@ final class WidgetWebViewTests: XCTestCase {
             }
           }())
         """) as? [String: Any] ?? [:]
+        let diagnostic = try await evaluate(webView, """
+          ({
+            standalone: Boolean(window.__AIWhaleStandalone),
+            editorMode: Boolean(window.__AIWhaleEditorMode),
+            widget: Boolean(window.__dshWhaleWidget),
+            init: Boolean(window.__dshWhaleInit),
+            api: Boolean(window.__AIWhaleEditorAPI),
+            settings: Boolean(window.__AIWhaleSettings),
+            mount: Boolean(document.querySelector('#upstreamEditorMount')),
+            errors: window.__AIWhaleTestErrors || []
+          })
+        """)
+        print("SETTINGS_WEBKIT_DIAGNOSTIC \(diagnostic)")
         XCTAssertEqual(result["editor"] as? Bool, true)
         XCTAssertEqual(result["mask"] as? Bool, true)
         XCTAssertEqual(result["rootHidden"] as? Bool, true)
