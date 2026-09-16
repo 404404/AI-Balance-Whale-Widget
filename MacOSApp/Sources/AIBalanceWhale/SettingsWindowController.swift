@@ -162,6 +162,7 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
         }
     }
 
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // The page may send ready before WebKit delivers didFinish; never clear it here.
     }
 

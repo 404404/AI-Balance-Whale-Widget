@@ -240,7 +240,7 @@ final class WhaleHostAdapter {
             "kind": "choice",
             "options": [
                 ["w": 10, "item": ["kind": "custom", "modules": [random]]],
-                ["w": 1, "item": ["kind": "custom", "modules": [["type": "image", "imgId": "bimg_petpet", "size": 6]]]
+                ["w": 1, "item": ["kind": "custom", "modules": [["type": "image", "imgId": "bimg_petpet", "size": 6]]]]
             ]
         ]
         return [first, second]

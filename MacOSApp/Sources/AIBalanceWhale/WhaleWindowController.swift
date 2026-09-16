@@ -290,7 +290,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let payloadJSON = String(data: data, encoding: .utf8) else { return }
-        pendingRenderScript = "window.__AIWhale && window.__AIWhale.update(\(payloadJSON\))"
+        pendingRenderScript = "window.__AIWhale && window.__AIWhale.update(\(payloadJSON))"
         flushPendingScripts()
     }
 
@@ -512,6 +512,12 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let script = "window.__AIWhaleHostResponse && window.__AIWhaleHostResponse(\(json(requestID)),\(result.0),\(payloadJSON))"
         if scriptsReady { evaluate(script) } else { pendingHostResponseScripts.append(script) }
     }
+    private func json(_ value: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let encoded = String(data: data, encoding: .utf8) else { return "null" }
+        return String(encoded.dropFirst().dropLast())
+    }
+
     private func recordDebug(_ event: String) {
         debugEvents.append((Date(), event))
         if debugEvents.count > 80 { debugEvents.removeFirst(debugEvents.count - 80) }
