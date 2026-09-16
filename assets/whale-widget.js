@@ -14747,11 +14747,6 @@ function pollLastTurn() {
   } catch (err) {}
 }
 setInterval(pollLastTurn, 1000)
-}
-// 主界面检测通过后执行挂件初始化（非主界面时 dshwInit 不会执行）
-if (dshwEnabled) {
-  try { dshwInit() } catch (err) {}
-}
 if (window.__AIWhaleEditorMode) {
   try {
     window.__AIWhaleEditorAPI = {
@@ -14775,5 +14770,10 @@ if (window.__AIWhaleEditorMode) {
       }
     }
   } catch (err) {}
+}
+}
+// 主界面检测通过后执行挂件初始化（非主界面时 dshwInit 不会执行）
+if (dshwEnabled) {
+  try { dshwInit() } catch (err) {}
 }
 })()
