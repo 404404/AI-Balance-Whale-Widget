@@ -14751,14 +14751,26 @@ function pollLastTurn() {
 setInterval(pollLastTurn, 1000)
 if (window.__AIWhaleEditorMode) {
   try {
-    var editorHost = window.__AIWhaleEditorMount || editorMount
-    if (editorHost && bubbleMask.parentNode !== editorHost) editorHost.appendChild(bubbleMask)
+    // Settings.html can recreate its page body while keeping this script alive.
+    // Resolve the live mount every time and move the complete editor stack there;
+    // retaining a stale detached mount makes the editor appear to open nowhere.
+    function attachEditorOverlays() {
+      var editorHost = document.getElementById('upstreamEditorMount') || window.__AIWhaleEditorMount || editorMount
+      if (!editorHost || !document.documentElement.contains(editorHost)) return null
+      window.__AIWhaleEditorMount = editorHost
+      editorMount = editorHost
+      ;[bubbleMask, bubbleItemMask, moduleMask].forEach(function (overlay) {
+        if (overlay && overlay.parentNode !== editorHost) editorHost.appendChild(overlay)
+      })
+      return editorHost
+    }
+    attachEditorOverlays()
     window.__AIWhaleEditorAPI = {
       openBubbleEditor: function () {
         try {
-          var host = window.__AIWhaleEditorMount || editorMount
-          if (host && bubbleMask.parentNode !== host) host.appendChild(bubbleMask)
+          attachEditorOverlays()
           openBubbleEditor()
+          attachEditorOverlays()
         } catch (err) {}
       },
       closeBubbleEditor: closeBubbleEditor,
