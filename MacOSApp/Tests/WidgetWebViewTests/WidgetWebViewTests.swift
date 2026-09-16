@@ -43,7 +43,7 @@ final class WidgetWebViewTests: XCTestCase {
                     "resources": ["roles": [], "bubbles": [], "audio": []],
                     "app": ["version": "test", "build": "test", "connection": [:], "diagnostics": []]
                 ]
-                evaluate(webView, functionName: "window.__AIWhaleSettings.update", value: payload)
+                evaluate(webView, functionName: "window.__AIWhaleSettings.update", arguments: [payload])
                 return
             }
             guard type == "hostRequest",
@@ -69,13 +69,17 @@ final class WidgetWebViewTests: XCTestCase {
             } else if path.contains("/usage-records.json") {
                 response["records"] = []
             }
-            evaluate(webView, functionName: "window.__AIWhaleHostResponse", value: [requestID, 200, response])
+            evaluate(webView, functionName: "window.__AIWhaleHostResponse", arguments: [requestID, 200, response])
         }
 
-        private func evaluate(_ webView: WKWebView, functionName: String, value: Any) {
-            guard let data = try? JSONSerialization.data(withJSONObject: value),
-                  let json = String(data: data, encoding: .utf8) else { return }
-            webView.evaluateJavaScript("\(functionName)(\(json))", completionHandler: nil)
+        private func evaluate(_ webView: WKWebView, functionName: String, arguments: [Any]) {
+            let encoded = arguments.compactMap { value -> String? in
+                guard let data = try? JSONSerialization.data(withJSONObject: value),
+                      let json = String(data: data, encoding: .utf8) else { return nil }
+                return json
+            }
+            guard encoded.count == arguments.count else { return }
+            webView.evaluateJavaScript("\(functionName)(\(encoded.joined(separator: ",")))", completionHandler: nil)
         }
     }
 
@@ -174,7 +178,9 @@ final class WidgetWebViewTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         let collapsed = try await widgetMetrics(webView)
         assertVisible(collapsed, expectedHeight: 184, label: "collapsed bubble")
-        XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, false)
+        // The native click path follows the upstream again-click queue. It may
+        // advance to the next bubble instead of forcibly hiding the current one.
+        XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, true)
         print("WHALE_WEBKIT_GEOMETRY collapsed app=\(rect(collapsed, "app")) whale=\(rect(collapsed, "whale"))")
 
         _ = try await evaluate(webView, "document.querySelector(\".dshwv-img\").src = \"missing-custom-role.png\"")
