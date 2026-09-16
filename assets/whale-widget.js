@@ -6645,7 +6645,9 @@ function openBubbleEditor() {
     bubbleEditorSnap = JSON.stringify([bubbleEditItems, bubbleLib, bubbleTapAdvChk.checked]) // v727：含开关，改开关也算"有改动"
     renderBubbleEditor()
     bubbleMask.style.display = 'flex'
-  } catch (err) {}
+  } catch (err) {
+    try { window.__AIWhaleEditorOpenError = String(err && err.message ? err.message : err) } catch (ignored) {}
+  }
 }
 function closeBubbleEditor() {
   bubbleMask.style.display = 'none'
