@@ -114,6 +114,10 @@ jobs:
           APP_VERSION: ${{ steps.release.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: MacOSApp/scripts/build.sh
+      - name: Run packaged WKWebView geometry tests
+        env:
+          WHALE_WIDGET_RESOURCE_ROOT: ${{ github.workspace }}/MacOSApp/dist/AI Balance Whale.app/Contents/Resources
+        run: swift test --package-path MacOSApp --filter WidgetWebViewTests
       - name: Create and validate DMG
         env:
           APP_VERSION: ${{ steps.release.outputs.version }}

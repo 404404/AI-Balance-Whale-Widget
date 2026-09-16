@@ -7,7 +7,7 @@ SETTINGS="$ROOT/MacOSApp/Resources/Settings.html"
 WINDOW="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleWindowController.swift"
 STORE="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleConfigurationStore.swift"
 
-for pattern in 'contextmenu' 'pointerup' 'pointercancel' 'dragEnd' 'setLayout' 'overflow: hidden' 'navigationToken' 'bubbleLayout' 'dshwv-bshape' 'dshwv-b1' 'dshwv-b2'; do
+for pattern in 'contextmenu' 'pointerup' 'pointercancel' 'dragEnd' 'setLayout' 'overflow: hidden' 'navigationToken' 'bubbleLayout' 'dshwv-bshape' 'dshwv-b1' 'dshwv-b2' 'height: calc(var(--h) * 1px * var(--s))' 'px * var(--s)' 'restoreDisplay' 'imageState'; do
   grep -Fq "$pattern" "$HTML" || { echo "missing WhaleWidget pattern: $pattern" >&2; exit 1; }
 done
 for pattern in 'data-page="general"' 'data-page="models"' 'data-page="resources"' 'data-page="bubbles"' 'data-page="sounds"' 'data-page="reminders"' 'data-page="about"' 'messageHandlers.settings' 'saveCredential' 'importResource'; do
@@ -15,6 +15,8 @@ for pattern in 'data-page="general"' 'data-page="models"' 'data-page="resources"
 done
 grep -Fq 'WhaleLayout.contentSize' "$WINDOW"
 grep -Fq 'saved.width - newSize.width' "$WINDOW"
+grep -Fq 'frame.origin.y = saved.minY' "$WINDOW"
+grep -Fq 'frame.origin.y = old.minY' "$WINDOW"
 grep -Fq 'resourceDataURL' "$WINDOW"
 grep -Fq 'Application Support' "$SETTINGS"
 grep -Fq 'Keychain' "$SETTINGS"

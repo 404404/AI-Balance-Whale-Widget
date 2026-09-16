@@ -12,5 +12,6 @@ let package = Package(
         .target(name: "CodexCore"),
         .executableTarget(name: "AIBalanceWhale", dependencies: ["CodexCore"]),
         .testTarget(name: "CodexCoreTests", dependencies: ["CodexCore"]),
+        .testTarget(name: "WidgetWebViewTests", dependencies: ["CodexCore"]),
     ]
 )
