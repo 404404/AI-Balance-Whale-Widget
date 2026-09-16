@@ -590,6 +590,7 @@ document.head.appendChild(styleEl)
 
 var root = document.createElement('div')
 root.className = 'dshwv-root'
+var editorMount = window.__AIWhaleEditorMount || null
 
 var img = document.createElement('img')
 img.className = 'dshwv-img'
@@ -6644,7 +6645,9 @@ function openBubbleEditor() {
     bubbleEditorSnap = JSON.stringify([bubbleEditItems, bubbleLib, bubbleTapAdvChk.checked]) // v727：含开关，改开关也算"有改动"
     renderBubbleEditor()
     bubbleMask.style.display = 'flex'
-  } catch (err) {}
+  } catch (err) {
+    try { window.__AIWhaleEditorOpenError = String(err && err.message ? err.message : err) } catch (ignored) {}
+  }
 }
 function closeBubbleEditor() {
   bubbleMask.style.display = 'none'
@@ -8103,7 +8106,16 @@ bubbleBtns.appendChild(bubbleBtn('重置', 'dshwv-bubbtn-no', bubbleEditorReset)
 bubbleBtns.appendChild(bubbleBtn('保存', 'dshwv-bubbtn-ok', bubbleEditorSave))
 bubbleCard.appendChild(bubbleBtns)
 bubbleMask.appendChild(bubbleCard)
-document.body.appendChild(bubbleMask)
+if (editorMount) {
+  editorMount.appendChild(bubbleMask)
+  bubbleMask.style.position = 'absolute'
+  bubbleMask.style.inset = '0'
+  bubbleMask.style.background = 'transparent'
+  bubbleMask.style.overflow = 'auto'
+  bubbleMask.style.alignItems = 'flex-start'
+} else {
+  document.body.appendChild(bubbleMask)
+}
 
 // ===== W2 单泡编辑窗口 =====
 bubbleItemMask = document.createElement('div')
@@ -10018,11 +10030,21 @@ body.appendChild(bubbleBox)
 root.appendChild(body)
 root.appendChild(menuBtn)
 document.body.appendChild(root)
+if (window.__AIWhaleEditorMode) root.style.display = 'none'
 if (window.__AIWhaleStandalone) {
   root.__dshwToggleBubble = function () { try { whaleClick() } catch (err) {} }
   root.__dshwHideBubble = function () { try { hideBubble() } catch (err) {} }
+  root.__dshwNativePointerDown = function () { try { pressDown() } catch (err) {} }
+  root.__dshwNativePointerUp = function (moved) {
+    try {
+      pressUp()
+      if (!moved) { whaleClick(); refresh(true) }
+    } catch (err) {}
+  }
+  root.__dshwNativeContextMenu = function () { try { toggleMenu() } catch (err) {} }
 }
 document.body.appendChild(menuBox)
+if (window.__AIWhaleEditorMode) menuBox.style.display = 'none'
 
 // 泡泡内容整体与视觉中心对齐:
 // 读取 SVG 主体(bshape)的包围盒,取其中点作为文字内容区的视觉中心,
@@ -10409,9 +10431,10 @@ function loadBubbleCfg() {
           bubbleTapAdvance = d.config.tapAdvance === true // v727
           applyBubbleCfgSeq()
           maybeBubbleMigratePeak()
+          if (window.__AIWhaleEditorMode && bubbleMask.style.display !== 'flex') openBubbleEditor()
         }
       })
-      .catch(function () {})
+      .catch(function () { if (window.__AIWhaleEditorMode && bubbleMask.style.display !== 'flex') openBubbleEditor() })
   } catch (err) {}
 }
 function saveBubbleCfg(cfg, okFn) {
@@ -10568,6 +10591,7 @@ function bubbleClearAll() {
 }
 function bubbleCloseVisual() {
   try { bubbleBox.classList.remove('dshwv-pop-open') } catch (err) {}
+  try { if (window.__AIWhaleStandalone && window.__AIWhaleLayoutUpdated) window.__AIWhaleLayoutUpdated() } catch (err) {}
   try { textBox.style.transition = ''; textBox.style.opacity = '' } catch (err) {}
   try { hintEl.style.transition = ''; hintEl.style.opacity = '' } catch (err) {}
   // gif 靠 CSS opacity 淡出;display:none 会跳过过渡,须等淡出完成再隐藏
@@ -10599,6 +10623,7 @@ function sceneOpen(kind, renderFn, ttlMs) {
   function finish() {
     try { renderFn() } catch (err) {}
     try { bubbleBox.classList.add('dshwv-pop-open') } catch (err) {}
+    try { if (window.__AIWhaleStandalone && window.__AIWhaleLayoutUpdated) window.__AIWhaleLayoutUpdated() } catch (err) {}
     // 内容替换(泡泡已开着)时淡入新文字;首次打开不加内联透明度,
     // 文字显隐交给 CSS(.dshwv-pop-open 才显示,带 .36s 延时跟随泡泡成形)
     if (wasOpen) {
@@ -14310,11 +14335,7 @@ function onDocPointerMove(e) {
   var previousTop = state.top
   state.left = clamp(drag.origLeft + dx, 0, Math.max(0, drag.vp.w - drag.w))
   state.top = clamp(drag.origTop + dy, 0, Math.max(0, drag.vp.h - drag.h))
-  if (window.__AIWhaleStandalone && window.__AIWhaleNativePost) {
-    window.__AIWhaleNativePost("dragMove", { dx: state.left - previousLeft, dy: state.top - previousTop })
-  } else {
-    express()
-  }
+  if (!window.__AIWhaleStandalone) express()
 }
 function onDocPointerUp(e) {
   // 拦截鲸鱼区域内的 pointerup：防止下方元素（如文件行）监听 pointerup 穿透误触发
@@ -14485,7 +14506,6 @@ function endDrag(e, clickAllowed) {
   root.classList.remove('dshwv-dragging')
   setWidgetCursor(isWhaleHit(e) ? 'grab' : '')
   if (window.__AIWhaleStandalone) {
-    if (window.__AIWhaleNativePost) window.__AIWhaleNativePost("dragEnd", { moved: !!drag.moved })
     if (clickAllowed && !drag.moved) { whaleClick(); refresh(true) }
     return
   }
@@ -14729,6 +14749,50 @@ function pollLastTurn() {
   } catch (err) {}
 }
 setInterval(pollLastTurn, 1000)
+if (window.__AIWhaleEditorMode) {
+  try {
+    // Settings.html can recreate its page body while keeping this script alive.
+    // Resolve the live mount every time and move the complete editor stack there;
+    // retaining a stale detached mount makes the editor appear to open nowhere.
+    function attachEditorOverlays() {
+      var editorHost = document.getElementById('upstreamEditorMount') || window.__AIWhaleEditorMount || editorMount
+      if (!editorHost || !document.documentElement.contains(editorHost)) return null
+      window.__AIWhaleEditorMount = editorHost
+      editorMount = editorHost
+      ;[bubbleMask, bubbleItemMask, moduleMask].forEach(function (overlay) {
+        if (overlay && overlay.parentNode !== editorHost) editorHost.appendChild(overlay)
+      })
+      return editorHost
+    }
+    attachEditorOverlays()
+    window.__AIWhaleEditorAPI = {
+      openBubbleEditor: function () {
+        try {
+          attachEditorOverlays()
+          openBubbleEditor()
+          attachEditorOverlays()
+        } catch (err) {}
+      },
+      closeBubbleEditor: closeBubbleEditor,
+      openRolePanel: toggleRolePanel,
+      openAudioPanel: toggleAudioGroupPanel,
+      openResourceManager: openResManager,
+      openUsageSettings: function () {
+        try {
+          buildUsageSettingsArea()
+          if (window.__AIWhaleEditorMode) {
+            document.body.appendChild(usagePanel)
+            usagePanel.style.display = 'block'
+            usagePanel.style.position = 'fixed'
+            usagePanel.style.left = '16px'
+            usagePanel.style.top = '16px'
+            usagePanel.style.zIndex = '10002'
+          }
+        } catch (err) {}
+      }
+    }
+  } catch (err) {}
+}
 }
 // 主界面检测通过后执行挂件初始化（非主界面时 dshwInit 不会执行）
 if (dshwEnabled) {

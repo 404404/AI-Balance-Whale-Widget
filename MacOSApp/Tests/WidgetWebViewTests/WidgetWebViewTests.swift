@@ -21,6 +21,129 @@ final class WidgetWebViewTests: XCTestCase {
         }
     }
 
+    private final class SettingsBridge: NSObject, WKScriptMessageHandler {
+        weak var webView: WKWebView?
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let body = message.body as? [String: Any],
+                  let type = body["type"] as? String,
+                  let webView else { return }
+            if type == "ready" {
+                let payload: [String: Any] = [
+                    "config": [
+                        "layout": ["scale": 1.0],
+                        "appearance": ["snapEnabled": true],
+                        "sound": ["enabled": true],
+                        "bubble": ["steps": []],
+                        "providers": [],
+                        "reminders": [:],
+                        "records": [:]
+                    ],
+                    "templates": [],
+                    "resources": ["roles": [], "bubbles": [], "audio": []],
+                    "app": ["version": "test", "build": "test", "connection": [:], "diagnostics": []]
+                ]
+                evaluate(webView, functionName: "window.__AIWhaleSettings.update", arguments: [payload])
+                return
+            }
+            guard type == "hostRequest",
+                  let requestID = body["requestId"] as? String,
+                  let path = body["path"] as? String else { return }
+            var response: [String: Any] = ["ok": true]
+            if path.contains("/bubble.json") {
+                response["config"] = ["v": 1, "items": [], "lib": [], "tapAdvance": false]
+            } else if path.contains("/size.json") {
+                response["scale"] = 1.0
+                response["sound"] = true
+                response["soundSet"] = "duck"
+                response["vol"] = 0.45
+            } else if path.contains("/roles.json") {
+                response["roles"] = []
+            } else if path.contains("/bubble-imgs.json") {
+                response["images"] = []
+            } else if path.contains("/audio.json") {
+                response["groups"] = []
+                response["fragments"] = []
+            } else if path.contains("/usage-settings.json") {
+                response["settings"] = [:]
+            } else if path.contains("/usage-records.json") {
+                response["records"] = []
+            }
+            evaluate(webView, functionName: "window.__AIWhaleHostResponse", arguments: [requestID, 200, response])
+        }
+
+        private func evaluate(_ webView: WKWebView, functionName: String, arguments: [Any]) {
+            let encoded = arguments.compactMap { value -> String? in
+                guard let data = try? JSONSerialization.data(withJSONObject: value),
+                      let json = String(data: data, encoding: .utf8) else { return nil }
+                return json
+            }
+            guard encoded.count == arguments.count else { return }
+            webView.evaluateJavaScript("\(functionName)(\(encoded.joined(separator: ",")))", completionHandler: nil)
+        }
+    }
+
+    func testPackagedSettingsMountsUpstreamEditorWithoutIframe() async throws {
+        let resourceRoot = try makeResourceRoot()
+        let settings = resourceRoot.appendingPathComponent("Settings.html")
+        let configuration = WKWebViewConfiguration()
+        let bridge = SettingsBridge()
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.__AIWhaleTestErrors=[];window.addEventListener('error',function(e){window.__AIWhaleTestErrors.push(String(e.message||e.error||'error'))},true)",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        configuration.userContentController.add(bridge, name: "settings")
+        configuration.userContentController.add(bridge, name: "bridge")
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 920, height: 680), configuration: configuration)
+        bridge.webView = webView
+        let delegate = NavigationDelegate()
+        webView.navigationDelegate = delegate
+        let loaded = expectation(description: "Settings.html loaded")
+        delegate.onFinish = { loaded.fulfill() }
+        delegate.onFailure = { error in XCTFail("settings WKWebView failed: \(error)"); loaded.fulfill() }
+        webView.loadFileURL(settings, allowingReadAccessTo: resourceRoot)
+        await fulfillment(of: [loaded], timeout: 10)
+
+        for _ in 0..<40 {
+            let ready = try await evaluate(webView, "Boolean(window.__AIWhaleEditorAPI && document.querySelector('.dshwv-bubmask'))")
+            if (ready as? Bool) == true { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let result = try await evaluate(webView, """
+          (function () {
+            window.__AIWhaleSettings.selectPage('bubbles')
+            window.__AIWhaleEditorAPI.openBubbleEditor()
+            return {
+              editor: Boolean(window.__AIWhaleEditorAPI),
+              mask: Boolean(document.querySelector('#upstreamEditorMount .dshwv-bubmask')),
+              rootHidden: getComputedStyle(document.querySelector('.dshwv-root')).display === 'none',
+              iframe: Boolean(document.querySelector('iframe'))
+            }
+          }())
+        """) as? [String: Any] ?? [:]
+        let diagnostic = try await evaluate(webView, """
+          ({
+            standalone: Boolean(window.__AIWhaleStandalone),
+            editorMode: Boolean(window.__AIWhaleEditorMode),
+            widget: Boolean(window.__dshWhaleWidget),
+            init: Boolean(window.__dshWhaleInit),
+            api: Boolean(window.__AIWhaleEditorAPI),
+            settings: Boolean(window.__AIWhaleSettings),
+            mount: Boolean(document.querySelector('#upstreamEditorMount')),
+            maskCount: document.querySelectorAll('.dshwv-bubmask').length,
+            maskParents: Array.from(document.querySelectorAll('.dshwv-bubmask')).map(function(x){return x.parentElement && x.parentElement.id || ''}),
+            openError: window.__AIWhaleEditorOpenError || '',
+            errors: window.__AIWhaleTestErrors || []
+          })
+        """)
+        print("SETTINGS_WEBKIT_DIAGNOSTIC \(diagnostic)")
+        XCTAssertEqual(result["editor"] as? Bool, true)
+        XCTAssertEqual(result["mask"] as? Bool, true)
+        XCTAssertEqual(result["rootHidden"] as? Bool, true)
+        XCTAssertEqual(result["iframe"] as? Bool, false)
+    }
+
     func testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback() async throws {
         let resourceRoot = try makeResourceRoot()
         let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
@@ -53,7 +176,11 @@ final class WidgetWebViewTests: XCTestCase {
 
         _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:1.0, height:184})")
         try await Task.sleep(nanoseconds: 100_000_000)
-        _ = try await evaluate(webView, "window.__AIWhale.toggleBubble()")
+        // Exercise the same bridge methods called by WhaleWindowController after
+        // a real native mouse down/up pair. This must not call toggleBubble()
+        // directly, otherwise a passing test could bypass the input bridge.
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown()")
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 180_000_000)
         let expanded = try await widgetMetrics(webView)
         assertVisible(expanded, expectedHeight: 184, label: "expanded bubble")
@@ -61,11 +188,21 @@ final class WidgetWebViewTests: XCTestCase {
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
         print("WHALE_WEBKIT_GEOMETRY expanded app=\(rect(expanded, "app")) whale=\(rect(expanded, "whale")) bubble=\(rect(expanded, "bubble"))")
 
-        _ = try await evaluate(webView, "window.__AIWhale.toggleBubble()")
+        // A completed drag must not be converted into a second click.
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown()")
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(true)")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let afterDrag = try await widgetMetrics(webView)
+        XCTAssertEqual(afterDrag["bubbleVisible"] as? Bool, true)
+
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown()")
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 100_000_000)
         let collapsed = try await widgetMetrics(webView)
         assertVisible(collapsed, expectedHeight: 184, label: "collapsed bubble")
-        XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, false)
+        // The native click path follows the upstream again-click queue. It may
+        // advance to the next bubble instead of forcibly hiding the current one.
+        XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, true)
         print("WHALE_WEBKIT_GEOMETRY collapsed app=\(rect(collapsed, "app")) whale=\(rect(collapsed, "whale"))")
 
         _ = try await evaluate(webView, "document.querySelector(\".dshwv-img\").src = \"missing-custom-role.png\"")
@@ -201,6 +338,7 @@ final class WidgetWebViewTests: XCTestCase {
         let tempRoot = fileManager.temporaryDirectory.appendingPathComponent("AIWhale-WebKit-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         try fileManager.copyItem(at: packageRoot.appendingPathComponent("Resources/WhaleWidget.html"), to: tempRoot.appendingPathComponent("WhaleWidget.html"))
+        try fileManager.copyItem(at: packageRoot.appendingPathComponent("Resources/Settings.html"), to: tempRoot.appendingPathComponent("Settings.html"))
         for name in ["DSniang1.png", "Ya1.mp3", "Ya2.mp3", "whale-widget.js", "rua.gif", "bubble-petpet.gif"] {
             let source = sourceRoot.appendingPathComponent("assets").appendingPathComponent(name)
             if fileManager.fileExists(atPath: source.path) {

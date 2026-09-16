@@ -69,7 +69,14 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "bridge", let body = message.body as? [String: Any], let type = body["type"] as? String {
-            if type == "hostRequest", let requestID = body["requestId"] as? String, let method = body["method"] as? String, let path = body["path"] as? String {
+            if type == "ready" {
+                ready = true
+                sendPayload()
+                sendPageSelection()
+                let pending = pendingBridgeScripts
+                pendingBridgeScripts.removeAll()
+                pending.forEach { sendJavaScript($0) }
+            } else if type == "hostRequest", let requestID = body["requestId"] as? String, let method = body["method"] as? String, let path = body["path"] as? String {
                 let result = hostAdapter.handle(method: method, rawPath: path, body: body["body"])
                 if let data = try? JSONSerialization.data(withJSONObject: result.1), let encoded = String(data: data, encoding: .utf8) {
                     let script = "window.__AIWhaleHostResponse && window.__AIWhaleHostResponse(\(json(requestID)),\(result.0),\(encoded))"

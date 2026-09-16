@@ -3,8 +3,43 @@ import WebKit
 import CodexCore
 
 final class WhalePanel: NSPanel {
+    var onMouseDown: ((NSEvent) -> Bool)?
+    var onMouseDragged: ((NSEvent) -> Bool)?
+    var onMouseUp: ((NSEvent) -> Bool)?
+    var onRightMouseDown: ((NSEvent) -> Bool)?
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            if onMouseDown?(event) == true { return }
+        case .leftMouseDragged:
+            if onMouseDragged?(event) == true { return }
+        case .leftMouseUp:
+            if onMouseUp?(event) == true { return }
+        case .rightMouseDown:
+            if onRightMouseDown?(event) == true { return }
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
+
+}
+
+private struct WhaleGeometryMetrics {
+    var x: CGFloat
+    var y: CGFloat
+    var width: CGFloat
+    var height: CGFloat
+}
+
+private struct NativeDragSession {
+    let startScreen: NSPoint
+    let originalFrame: CGRect
+    var moved = false
 }
 
 final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate {
@@ -29,6 +64,9 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private var bubbleVisible = false
     private var bubbleHeight: CGFloat = WhaleLayout.defaultBubbleHeight
     private var debugEvents: [(Date, String)] = []
+    private var lastWhaleMetrics: WhaleGeometryMetrics?
+    private var nativeDragSession: NativeDragSession?
+    private var lastSentLayoutKey: String?
     private lazy var hostAdapter = WhaleHostAdapter(owner: self)
     private let usesEmbeddedUpstreamBubble = true
 
@@ -58,6 +96,10 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         panel.contentView = webView
         webView.frame = panel.contentView?.bounds ?? .zero
         webView.autoresizingMask = [.width, .height]
+        panel.onMouseDown = { [weak self] event in self?.handleNativeMouseDown(event) ?? false }
+        panel.onMouseDragged = { [weak self] event in self?.handleNativeMouseDragged(event) ?? false }
+        panel.onMouseUp = { [weak self] event in self?.handleNativeMouseUp(event) ?? false }
+        panel.onRightMouseDown = { [weak self] event in self?.handleNativeRightMouseDown(event) ?? false }
         contentController.add(self, name: "bridge")
         webView.navigationDelegate = self
         restoreFrame()
@@ -184,9 +226,10 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         case "bubbleLayout":
             let visible = (body["visible"] as? NSNumber)?.boolValue ?? bubbleVisible
             let requestedHeight = CGFloat((body["height"] as? NSNumber)?.doubleValue ?? Double(bubbleHeight))
+            let changed = visible != bubbleVisible || abs(requestedHeight - bubbleHeight) > 0.5
             bubbleVisible = visible
             bubbleHeight = min(max(requestedHeight, 120), WhaleLayout.maximumBubbleHeight)
-            resizeToCurrentLayout(preserveAnchor: true)
+            if changed { resizeToCurrentLayout(preserveAnchor: true) }
         case "layoutMetrics":
             recordMetrics(body)
         case "imageState":
@@ -198,13 +241,9 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
                   url.host != nil else { return }
             NSWorkspace.shared.open(url)
         case "dragMove":
-            guard !AppPreferences.shared.mousePassthrough,
-                  let dx = body["dx"] as? NSNumber,
-                  let dy = body["dy"] as? NSNumber else { return }
-            moveBy(dx: CGFloat(dx.doubleValue), dy: CGFloat(dy.doubleValue))
+            recordDebug("ignored legacy dragMove")
         case "dragEnd":
-            guard (body["moved"] as? NSNumber)?.boolValue == true else { return }
-            snapAndSave()
+            recordDebug("ignored legacy dragEnd")
         default:
             recordDebug("ignored bridge message: \(type)")
         }
@@ -396,6 +435,9 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let scale = WhaleLayout.scale(AppPreferences.shared.scale)
         let size = currentContentSize()
         let baseHeight = size.height / max(scale, 0.01)
+        let key = String(format: "%.3f/%.1f/%.1f/%@", scale, size.width, size.height, bubbleVisible ? "1" : "0")
+        guard key != lastSentLayoutKey else { return }
+        lastSentLayoutKey = key
         pendingLayoutScript = "window.__AIWhale && window.__AIWhale.setLayout({scale:\(scale),width:\(size.width),height:\(size.height),heightBase:\(baseHeight),bubbleVisible:\(bubbleVisible)})"
         flushPendingScripts()
     }
@@ -491,7 +533,77 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             guard let value = body[key] as? NSNumber else { return "?" }
             return String(format: "%.1f", value.doubleValue)
         }
+        if let x = body["whaleX"] as? NSNumber,
+           let y = body["whaleY"] as? NSNumber,
+           let width = body["whaleW"] as? NSNumber,
+           let height = body["whaleH"] as? NSNumber {
+            lastWhaleMetrics = WhaleGeometryMetrics(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue), width: CGFloat(width.doubleValue), height: CGFloat(height.doubleValue))
+        }
         recordDebug("metrics inner=\(number("innerWidth"))x\(number("innerHeight")) whale=\(number("whaleX")),\(number("whaleY")),\(number("whaleW"))x\(number("whaleH")) bubble=\(number("bubbleX")),\(number("bubbleY")),\(number("bubbleW"))x\(number("bubbleH"))")
+    }
+
+    private func handleNativeMouseDown(_ event: NSEvent) -> Bool {
+        guard event.buttonNumber == 0,
+              !AppPreferences.shared.mousePassthrough,
+              let point = localDOMPoint(for: event),
+              isWhalePoint(point) else { return false }
+        let screenPoint = panel.convertPoint(toScreen: event.locationInWindow)
+        nativeDragSession = NativeDragSession(startScreen: screenPoint, originalFrame: panel.frame)
+        evaluate("window.__AIWhale && window.__AIWhale.nativePointerDown && window.__AIWhale.nativePointerDown()")
+        recordDebug("native pointer down")
+        return true
+    }
+
+    private func handleNativeMouseDragged(_ event: NSEvent) -> Bool {
+        guard var session = nativeDragSession else { return false }
+        let screenPoint = panel.convertPoint(toScreen: event.locationInWindow)
+        let dx = screenPoint.x - session.startScreen.x
+        let dy = screenPoint.y - session.startScreen.y
+        if hypot(dx, dy) >= 3 { session.moved = true }
+        nativeDragSession = session
+        guard session.moved else { return true }
+        var frame = session.originalFrame
+        frame.origin.x += dx
+        frame.origin.y += dy
+        panel.setFrame(frame, display: false)
+        return true
+    }
+
+    private func handleNativeMouseUp(_ event: NSEvent) -> Bool {
+        guard let session = nativeDragSession else { return false }
+        nativeDragSession = nil
+        evaluate("window.__AIWhale && window.__AIWhale.nativePointerUp && window.__AIWhale.nativePointerUp(\(session.moved ? "true" : "false"))")
+        if session.moved { snapAndSave() }
+        recordDebug(session.moved ? "native drag ended" : "native click ended")
+        return true
+    }
+
+    private func handleNativeRightMouseDown(_ event: NSEvent) -> Bool {
+        guard !AppPreferences.shared.mousePassthrough,
+              let point = localDOMPoint(for: event), isWhalePoint(point) else { return false }
+        evaluate("window.__AIWhale && window.__AIWhale.nativeContextMenu && window.__AIWhale.nativeContextMenu()")
+        recordDebug("native context menu")
+        return true
+    }
+
+    private func localDOMPoint(for event: NSEvent) -> NSPoint? {
+        guard let contentView = panel.contentView else { return nil }
+        let local = contentView.convert(event.locationInWindow, from: nil)
+        let bounds = contentView.bounds
+        return NSPoint(x: local.x, y: bounds.height - local.y)
+    }
+
+    private func isWhalePoint(_ point: NSPoint) -> Bool {
+        let bounds = panel.contentView?.bounds ?? .zero
+        guard bounds.width > 0, bounds.height > 0 else { return false }
+        let metrics = lastWhaleMetrics ?? WhaleGeometryMetrics(
+            x: bounds.width * 0.129,
+            y: bounds.height * 0.054,
+            width: bounds.width * 0.742,
+            height: bounds.height * 0.946
+        )
+        return point.x >= metrics.x && point.x <= metrics.x + metrics.width &&
+            point.y >= metrics.y && point.y <= metrics.y + metrics.height
     }
 
     private func recordImageState(_ body: [String: Any]) {
