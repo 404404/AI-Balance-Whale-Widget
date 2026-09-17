@@ -2,7 +2,7 @@
 
 本 fork 新增了独立的 `AI Balance Whale.app`（macOS 14+、Apple Silicon arm64）。它保留小鲸鱼的点击气泡、按压动画、拖拽、缩放、边缘吸附、左右翻转和音效开关；App Bundle 图标与菜单栏入口都由同一份小鲸鱼素材生成，但宿主已经从 DSH 网页路由中分离出来，安装后的 App 不需要 DSH、浏览器或 Node.js。
 
-首版只读取本机 `codex app-server` 的账号与真实 ChatGPT 订阅额度：应用启动自己管理一个 stdio app-server 子进程，完成 `initialize` / `initialized`，随后读取 `account/read` 与 `account/rateLimits/read`，并监听 `account/rateLimits/updated`。不会把 token、`auth.json` 或 Keychain 秘密传给 WebView、写入日志、构建产物或 GitHub。API Key 模式不提供订阅额度时会明确提示；离线时可以显示同账号缓存并标记过期。
+当前版本并列显示 Codex / Grok / Cursor 订阅剩余百分比和 DeepSeek 余额，不再做互斥的「Codex 模式 / DeepSeek 模式」。Codex 优先走本机 `codex app-server`（`account/read`、`account/rateLimits/read`、`account/rateLimits/updated`），HTTP WHAM 仅作后备；Grok / Cursor / DeepSeek 用设置里保存到 Keychain 的登录态或 API Key 实查。未填登录态时先显示演示数据，气泡不会空白。不会把 token、`auth.json` 或 Keychain 秘密传给 WebView、写入日志、构建产物或 GitHub。
 
 ### 安装与前置条件
 
@@ -13,7 +13,7 @@
 ### macOS 首版范围
 
 - 已实现：透明无边框浮窗、统一鲸鱼 AppIcon 与菜单栏图标、显示/隐藏、设置、刷新、退出、非激活显示、位置/大小/音效/展示偏好保存、多显示器位置夹紧与断屏恢复、睡眠暂停/唤醒刷新、可选登录启动、鼠标穿透恢复、置顶与跨桌面开关、Codex 多额度桶/动态窗口/重置倒计时/过期缓存；气泡页面不产生外层滚动条，鲸鱼图片禁止浏览器原生拖拽并使用累计阈值/取消事件处理。
-- 已实现：统一设置中心（通用与桌面、模型与账户、角色与图片、气泡与内容、音效、提醒与用量、关于与诊断）；厂商 HTTP 配置、角色/音效资源导入、气泡步骤编辑和配置备份恢复均可保存并在重启后恢复。没有官方接口或会话事件来源的厂商/账本只显示明确的不可用状态，不伪造数据。
+- 已实现：统一设置中心（通用、账户与额度、气泡内容、外观、音效、提醒、关于）；设置里改的气泡步骤就是点人偶的点击队列；人偶侧边设置按钮和右键菜单（刷新额度 / 设置 / 编辑气泡 / 账户）默认可用。密钥只进 Keychain。没有官方接口或会话事件来源的厂商只显示明确的不可用状态，不伪造数据。
 
 ### 本地开发与发布
 

@@ -145,14 +145,18 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
       return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(w.label) + '</span><span class="mono">剩余 ' + remainLabel(w.remainPct) + '</span></div><div class="meter"><i style="width:' + Number(w.remainPct || 0) + '%"></i></div></div>';
     }).join("");
     var balance = a.kind === "balance" ? '<p class="mono" style="font-size:20px;margin:8px 0 0">' + money(a) + "</p>" : windows;
-    var token = a.authMode === "token" ? '<label class="field">' + esc(info.tokenHint) + '<textarea id="tok-' + esc(a.id) + '" placeholder="只存在本机 Keychain，不会写进仓库"></textarea></label>' : "";
+    var tokenHint = a.provider === "codex" ? "可选：ChatGPT session（HTTP 后备，本机 CLI 登录才是主路径）" : info.tokenHint;
+    var showToken = a.provider === "codex" || a.authMode === "token";
+    var token = showToken ? '<label class="field">' + esc(tokenHint) + '<textarea id="tok-' + esc(a.id) + '" placeholder="只存在本机 Keychain，不会写进仓库"></textarea></label>' : "";
     var core = ["codex", "grok", "cursor", "deepseek"].indexOf(a.id) >= 0;
     var conn = a.provider === "codex" ? codexCard() : "";
-    return '<div class="card" data-acc="' + esc(a.id) + '"><h3 style="margin:0 0 6px">' + esc(a.name) + '</h3><p class="note">' + esc(info.help) + '</p><div class="grid"><label class="check"><input class="en" type="checkbox" ' + (a.enabled !== false ? "checked" : "") + '>启用</label><label class="check"><input class="tok" type="checkbox" ' + (a.authMode === "token" ? "checked" : "") + '>使用真实登录态 / Key</label></div>' + token + conn + '<div class="actions"><button class="primary refresh">刷新额度</button>' + (core ? "" : '<button class="danger del">删除</button>') + '</div><p class="note">' + esc(a.message || "") + (a.hasToken ? " · Keychain 已保存" : "") + "</p>" + balance + "</div>";
+    var liveLabel = a.provider === "codex" ? "使用本机 Codex 登录实查" : "使用真实登录态 / Key";
+    var liveChecked = a.provider === "codex" || a.authMode === "token";
+    return '<div class="card" data-acc="' + esc(a.id) + '"><h3 style="margin:0 0 6px">' + esc(a.name) + '</h3><p class="note">' + esc(info.help) + '</p><div class="grid"><label class="check"><input class="en" type="checkbox" ' + (a.enabled !== false ? "checked" : "") + '>启用</label><label class="check"><input class="tok" type="checkbox" ' + (liveChecked ? "checked" : "") + (a.provider === "codex" ? " disabled" : "") + '>' + liveLabel + '</label></div>' + token + conn + '<div class="actions"><button class="primary refresh">刷新额度</button>' + (core ? "" : '<button class="danger del">删除</button>') + '</div><p class="note">' + esc(a.message || "") + (a.hasToken ? " · Keychain 已保存" : "") + "</p>" + balance + "</div>";
   }
   function codexCard() {
     var c = (m.app && m.app.connection) || {};
-    return '<div class="status" style="margin-top:8px">' + esc(c.message || "未测试") + '<br>连接状态：' + esc(c.status || "idle") + (c.version ? " · CLI " + esc(c.version) : "") + '</div><div class="field"><label>codex 可执行文件</label><input id="codexPath" value="' + esc(c.resolvedPath || c.path || "") + '"></div><div class="actions"><button class="secondary" id="redetect">重新检测</button><button class="secondary" id="chooseCodex">选择可执行文件…</button></div><div class="field"><label>CODEX_HOME</label><input id="codexHome" value="' + esc(c.effectiveHome || c.home || "") + '"></div><div class="actions"><button class="secondary" id="chooseHome">选择 CODEX_HOME…</button><button class="secondary" id="saveConn">保存连接</button><button class="secondary" id="testConn">测试并刷新</button></div><p class="note">登录状态由本机 Codex app-server 判断；HTTP 仅作后备。本页不会把 Token 写进 git。</p>';
+    return '<div class="status" style="margin-top:8px">' + esc(c.message || "未测试") + '<br>连接状态：' + esc(c.status || "idle") + (c.account ? " · " + esc(c.account) : "") + (c.version ? " · CLI " + esc(c.version) : "") + '</div><div class="field"><label>codex 可执行文件</label><input id="codexPath" value="' + esc(c.resolvedPath || c.path || "") + '"></div><div class="actions"><button class="secondary" id="redetect">重新检测</button><button class="secondary" id="chooseCodex">选择可执行文件…</button></div><div class="field"><label>CODEX_HOME</label><input id="codexHome" value="' + esc(c.effectiveHome || c.home || "") + '"></div><div class="actions"><button class="secondary" id="chooseHome">选择 CODEX_HOME…</button><button class="secondary" id="saveConn">保存连接</button><button class="secondary" id="testConn">测试并刷新</button></div><p class="note">Codex 走本机 app-server 读订阅窗，与 DeepSeek 余额并列。粘贴 session 只在 CLI 不可用时作为 HTTP 后备。Token 不进 git。</p>';
   }
   function bindAccountCard(a) {
     var root = document.querySelector('[data-acc="' + a.id + '"]');
@@ -196,7 +200,11 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
     accs.filter(function (a) { return a.kind === "balance"; }).forEach(function (a) { bals += '<option value="' + esc(a.id) + '"' + (mod.accountId === a.id ? " selected" : "") + ">" + esc(a.name) + "</option>"; });
     var extra = "";
     if (mod.type === "text") extra = '<label class="field">文本<input class="mtxt" value="' + esc(mod.text || "") + '"></label>';
-    if (mod.type === "quota") extra = '<label class="field">账户<select class="macc">' + subs + "</select></label>";
+    if (mod.type === "quota") {
+      var acc = accs.filter(function (a) { return a.id === mod.accountId; })[0] || accs.filter(function (a) { return a.kind === "subscription"; })[0] || {};
+      var wins = (acc.windows || []).map(function (w) { return '<option value="' + esc(w.id) + '"' + (mod.windowId === w.id ? " selected" : "") + ">" + esc(w.label || w.id) + "</option>"; }).join("");
+      extra = '<label class="field">账户<select class="macc">' + subs + "</select></label><label class=\"field\">额度窗<select class=\"mwin\">" + (wins || "<option value=\"\">默认</option>") + "</select></label>";
+    }
     if (mod.type === "balance") extra = '<label class="field">账户<select class="macc">' + bals + "</select></label>";
     if (mod.type === "random") extra = '<label class="field" style="grid-column:1/-1">语句（一行一条）<textarea class="mlines">' + esc((mod.lines || []).join("\n")) + "</textarea></label>";
     return '<div class="grid" data-mod="' + mi + '"><label class="field">模块<select class="mtype"><option value="dashboard">总览（全部账户）</option><option value="quota">订阅额度</option><option value="balance">余额</option><option value="text">文本</option><option value="random">随机语句</option><option value="image">图片</option></select></label>' + extra + "</div>";
@@ -217,6 +225,7 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
     };
     var txt = box.querySelector(".mtxt"); if (txt) txt.oninput = function () { ss[i].modules[mi].text = this.value; set(["bubble", "steps"], ss); save(); var preview = root.querySelector(".preview"); if (preview) preview.outerHTML = stepView(ss[i], accs); };
     var acc = box.querySelector(".macc"); if (acc) acc.onchange = function () { ss[i].modules[mi].accountId = this.value; set(["bubble", "steps"], ss); save(); bubblesPage(); };
+    var win = box.querySelector(".mwin"); if (win) win.onchange = function () { ss[i].modules[mi].windowId = this.value; set(["bubble", "steps"], ss); save(); bubblesPage(); };
     var lines = box.querySelector(".mlines"); if (lines) lines.oninput = function () { ss[i].modules[mi].lines = this.value.split("\n").filter(Boolean); set(["bubble", "steps"], ss); save(); var preview = root.querySelector(".preview"); if (preview) preview.outerHTML = stepView(ss[i], accs); };
   }
 

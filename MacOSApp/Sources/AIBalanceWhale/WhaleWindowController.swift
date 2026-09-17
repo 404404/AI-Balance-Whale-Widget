@@ -317,7 +317,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let releaseRef = sound["release"] as? String ?? "Ya2.mp3"
         let pressSound = store.resourceDataURL(kind: "audio", id: pressRef) ?? pressRef
         let releaseSound = store.resourceDataURL(kind: "audio", id: releaseRef) ?? releaseRef
-        let revision = steps.map { ($0["id"] as? String) ?? "" }.joined(separator: "/") + "/" + String(accounts.count)
+        let revision = AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
         let object: [String: Any] = [
             "accounts": accounts,
             "bubble": ["steps": steps, "advanceOnClick": bubble["advanceOnClick"] ?? true, "closeAfterSeconds": bubble["closeAfterSeconds"] ?? 0],

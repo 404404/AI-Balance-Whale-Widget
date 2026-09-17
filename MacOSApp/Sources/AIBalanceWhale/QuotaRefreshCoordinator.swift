@@ -17,6 +17,7 @@ final class QuotaRefreshCoordinator {
     private var sleeping = false
     private var pending = 0
     private var restartCodex = false
+    private var codexGeneration = 0
     private var latestCodex = ProviderState()
 
     init() {
@@ -78,9 +79,12 @@ final class QuotaRefreshCoordinator {
             let authMode = account["authMode"] as? String ?? "demo"
             let keyRef = account["keyRef"] as? String ?? "account.\(id)"
             let token = store.credential(reference: keyRef) ?? ""
+            let hasToken = !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-            if authMode != "token" || (provider != "codex" && token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                if provider == "codex" { restartCodex = false }
+            // Codex auth is local CLI / app-server, not a pasted API key and not
+            // mutually exclusive with DeepSeek. Other providers stay on demo
+            // numbers until a Keychain token exists.
+            if !AccountCatalog.shouldLiveFetch(provider: provider, authMode: authMode, hasToken: hasToken) {
                 apply(id: id, patch: [
                     "status": "demo",
                     "message": "演示数据。填登录态后点刷新才会打真实接口。",
@@ -90,6 +94,7 @@ final class QuotaRefreshCoordinator {
 
             if provider == "codex" {
                 pending += 1
+                codexGeneration = current
                 latestCodex.status = .loading
                 latestCodex.message = "正在查询 Codex 额度…"
                 emitCodex()
@@ -117,8 +122,9 @@ final class QuotaRefreshCoordinator {
             self.latestCodex = state
             self.emitCodex()
             let success = state.status == .ready || state.status == .stale
+            let generation = self.codexGeneration
             if success {
-                self.applyCodex(state, generation: self.generation)
+                self.applyCodex(state, generation: generation)
                 return
             }
             if source == .appServer, self.shouldFallback(state) {
@@ -132,9 +138,9 @@ final class QuotaRefreshCoordinator {
                         self?.queue.async {
                             guard let self else { return }
                             if result.ok {
-                                self.finishExternal(id: "codex", current: self.account("codex"), result: result, generation: self.generation)
+                                self.finishExternal(id: "codex", current: self.account("codex"), result: result, generation: generation)
                             } else {
-                                self.applyCodexFailure(state.message, generation: self.generation)
+                                self.applyCodexFailure(state.message, generation: generation)
                             }
                         }
                     }
@@ -142,7 +148,7 @@ final class QuotaRefreshCoordinator {
                 }
             }
             if state.status != .loading && state.status != .idle {
-                self.applyCodexFailure(state.message, generation: self.generation)
+                self.applyCodexFailure(state.message, generation: generation)
             }
         }
     }
@@ -171,7 +177,7 @@ final class QuotaRefreshCoordinator {
             patch["message"] = state.message
         }
         apply(id: "codex", patch: patch, generation: generation, keepLastOnEmptyWindows: true)
-        finishOne()
+        finishOne(generation)
     }
 
     private func applyCodexFailure(_ message: String, generation: Int) {
@@ -179,7 +185,7 @@ final class QuotaRefreshCoordinator {
             "status": "error",
             "message": message,
         ], generation: generation, keepLastOnEmptyWindows: true)
-        finishOne()
+        finishOne(generation)
     }
 
     private func finishExternal(id: String, current: [String: Any], result: QuotaFetchSnapshot, generation: Int) {
@@ -195,7 +201,7 @@ final class QuotaRefreshCoordinator {
             if let total = result.total { patch["total"] = total }
         }
         apply(id: id, patch: patch, generation: generation, keepLastOnEmptyWindows: true)
-        finishOne()
+        finishOne(generation)
     }
 
     private func apply(id: String, patch: [String: Any], generation: Int, keepLastOnEmptyWindows: Bool = false) {
@@ -220,7 +226,8 @@ final class QuotaRefreshCoordinator {
         publish()
     }
 
-    private func finishOne() {
+    private func finishOne(_ generation: Int) {
+        guard generation == self.generation else { return }
         pending = max(0, pending - 1)
     }
 

@@ -86,7 +86,7 @@ public enum AccountCatalog {
         "codex": [
             "label": "Codex / ChatGPT", "kind": "subscription", "currency": "USD",
             "tokenHint": "ChatGPT session / Codex 登录态",
-            "help": "Nowdex 同款：读 5 小时窗和周额度。本机优先走 Codex app-server，HTTP 仅作后备。也可先用演示数据。",
+            "help": "Nowdex 同款：读 5 小时窗和周额度。本机 Codex CLI 登录即可实查，不需要 DeepSeek Key，也不和余额账户互斥。HTTP 仅作后备。",
         ],
         "grok": [
             "label": "Grok / SuperGrok", "kind": "subscription", "currency": "USD",
@@ -252,6 +252,36 @@ public enum AccountCatalog {
             next["keyRef"] = "account.\(id)"
         }
         return next
+    }
+
+    /// Codex uses local CLI login (app-server), so it live-fetches whenever enabled.
+    /// Other providers need an explicit token in Keychain.
+    public static func shouldLiveFetch(provider: String, authMode: String, hasToken: Bool) -> Bool {
+        if provider == "codex" { return true }
+        return authMode == "token" && hasToken
+    }
+
+    /// Revision the desktop whale uses to know settings steps or quota numbers changed.
+    public static func bubbleRevision(steps: [[String: Any]], accounts: [[String: Any]]) -> String {
+        let stepPart = compactJSON(steps) ?? "[]"
+        let accountPart = accounts.map { account -> String in
+            let id = account["id"] as? String ?? ""
+            let remaining = (account["remaining"] as? NSNumber)?.stringValue ?? ""
+            let windows = (account["windows"] as? [[String: Any]] ?? []).map { window in
+                let winID = window["id"] as? String ?? ""
+                let remain = (window["remainPct"] as? NSNumber)?.stringValue ?? ""
+                let reset = (window["resetAt"] as? NSNumber)?.stringValue ?? ""
+                return "\(winID):\(remain):\(reset)"
+            }.joined(separator: ",")
+            return "\(id)=\(remaining){\(windows)}"
+        }.joined(separator: "|")
+        return stepPart + "#" + accountPart
+    }
+
+    public static func compactJSON(_ value: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     public static func windows(from buckets: [RateLimitBucket]) -> [QuotaWindowSnapshot] {

@@ -45,6 +45,28 @@ final class AccountCatalogTests: XCTestCase {
         XCTAssertEqual(stripped["keyRef"] as? String, "account.grok")
     }
 
+    func testCodexLiveFetchesWithoutPastedToken() {
+        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "codex", authMode: "demo", hasToken: false))
+        XCTAssertFalse(AccountCatalog.shouldLiveFetch(provider: "grok", authMode: "demo", hasToken: false))
+        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "grok", authMode: "token", hasToken: true))
+        XCTAssertFalse(AccountCatalog.shouldLiveFetch(provider: "deepseek", authMode: "token", hasToken: false))
+        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "cursor", authMode: "token", hasToken: true))
+    }
+
+    func testBubbleRevisionChangesWhenSettingsOrQuotaChange() {
+        let steps = AccountCatalog.defaultBubbleSteps()
+        let accounts = AccountCatalog.defaultAccounts()
+        let first = AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
+        var edited = steps
+        edited[0] = ["id": "step-dash", "modules": [["type": "text", "text": "改过的气泡"]]]
+        XCTAssertNotEqual(first, AccountCatalog.bubbleRevision(steps: edited, accounts: accounts))
+        var refreshed = accounts
+        var codex = refreshed[0]
+        codex["windows"] = [["id": "5h", "label": "5 小时", "remainPct": 10, "usedPct": 90]]
+        refreshed[0] = codex
+        XCTAssertNotEqual(first, AccountCatalog.bubbleRevision(steps: steps, accounts: refreshed))
+    }
+
     func testCodexBucketsMapToFiveHourAndWeekWindows() {
         let buckets = [
             RateLimitBucket(id: "codex", name: nil, window: .primary, windowDurationMinutes: 300, usedPercent: 38, resetsAt: Date(timeIntervalSince1970: 1_730_000_000)),

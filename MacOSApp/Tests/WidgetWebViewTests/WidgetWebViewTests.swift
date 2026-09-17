@@ -172,9 +172,19 @@ final class WidgetWebViewTests: XCTestCase {
         _ = try await evaluate(webView, """
           window.__AIWhale.update({
             showMenuButton: true,
-            accounts: [{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38}]}],
-            bubbleSteps: [{id:'step-dash',modules:[{type:'dashboard'}]}],
-            bubbleRevision: 'test-1'
+            accounts: [
+              {id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38,resetAt:null}]},
+              {id:'deepseek',name:'DeepSeek',provider:'deepseek',kind:'balance',enabled:true,remaining:42.18,currency:'CNY'}
+            ],
+            bubble: {steps: [
+              {id:'step-dash',modules:[{type:'dashboard'}]},
+              {id:'step-codex',modules:[{type:'text',text:'Codex 订阅',size:12,bold:true},{type:'quota',accountId:'codex',windowId:'5h',field:'full'}]}
+            ], advanceOnClick: true},
+            bubbleSteps: [
+              {id:'step-dash',modules:[{type:'dashboard'}]},
+              {id:'step-codex',modules:[{type:'text',text:'Codex 订阅',size:12,bold:true},{type:'quota',accountId:'codex',windowId:'5h',field:'full'}]}
+            ],
+            bubbleRevision: 'test-queue-2'
           })
         """)
 
@@ -198,6 +208,9 @@ final class WidgetWebViewTests: XCTestCase {
         assertVisible(expanded, expectedHeight: 184, label: "expanded bubble")
         XCTAssertEqual(expanded["bubbleVisible"] as? Bool, true)
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
+        XCTAssertTrue((expanded["bubbleText"] as? String ?? "").contains("额度总览"), "settings dashboard step must render on the click bubble")
+        XCTAssertEqual(expanded["menuHidden"] as? Bool, false)
+        XCTAssertEqual(expanded["menuPinned"] as? Bool, true)
         print("WHALE_WEBKIT_GEOMETRY expanded app=\(rect(expanded, "app")) whale=\(rect(expanded, "whale")) bubble=\(rect(expanded, "bubble"))")
 
         // A completed drag must not be converted into a second click.
@@ -216,6 +229,26 @@ final class WidgetWebViewTests: XCTestCase {
         // advance to the next bubble instead of forcibly hiding the current one.
         XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, true)
         print("WHALE_WEBKIT_GEOMETRY collapsed app=\(rect(collapsed, "app")) whale=\(rect(collapsed, "whale"))")
+
+        _ = try await evaluate(webView, """
+          window.__AIWhale.update({
+            showMenuButton: true,
+            accounts: [{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38}]}],
+            bubble: {steps: [
+              {id:'step-edit',modules:[{type:'text',text:'设置页改过的气泡',size:14,bold:true}]},
+              {id:'step-keep',modules:[{type:'text',text:'第二步',size:12}]}
+            ], advanceOnClick: true},
+            bubbleSteps: [
+              {id:'step-edit',modules:[{type:'text',text:'设置页改过的气泡',size:14,bold:true}]},
+              {id:'step-keep',modules:[{type:'text',text:'第二步',size:12}]}
+            ],
+            bubbleRevision: 'test-settings-sync'
+          })
+        """)
+        try await Task.sleep(nanoseconds: 180_000_000)
+        let synced = try await widgetMetrics(webView)
+        XCTAssertEqual(synced["bubbleVisible"] as? Bool, true)
+        XCTAssertTrue((synced["bubbleText"] as? String ?? "").contains("设置页改过的气泡"), "settings bubble edits must appear on the click bubble")
 
         _ = try await evaluate(webView, "document.querySelector(\".dshwv-img\").src = \"missing-custom-role.png\"")
         try await waitForImage(webView)
@@ -248,12 +281,16 @@ final class WidgetWebViewTests: XCTestCase {
             }
             return true;
           }
+          var menu = document.querySelector('.dshwv-menu-btn');
           return {
             computedHeight: getComputedStyle(app).height,
             app: rect(app),
             whale: rect(whale),
             bubble: rect(bubble),
             bubbleVisible: bubble.classList.contains('dshwv-pop-open'),
+            bubbleText: (bubble.innerText || bubble.textContent || '').replace(/\\s+/g, ' ').trim(),
+            menuHidden: !!(menu && menu.classList.contains('dshwv-menu-btn-hidden')),
+            menuPinned: !!(menu && menu.classList.contains('dshwv-menu-btn-pinned')),
             ancestorsVisible: visibleAncestors(whale),
             imageComplete: whale.complete,
             naturalWidth: whale.naturalWidth,

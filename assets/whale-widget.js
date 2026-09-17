@@ -10254,22 +10254,46 @@ function renderNowdexModule(parentEl, m) {
   }
   return false
 }
+function bubbleReshowCurrent() {
+  if (!bubbleShown || !bubbleRoundOn) return
+  var idx = Math.max(0, bubbleSeqIdx - 1)
+  var step = bubbleSeq[idx]
+  if (!step) return
+  var item = bubbleIsChoice(step) ? bubblePickChoiceStep(step) : step
+  if (!item) return
+  if (item.kind === 'random') {
+    var lines = bubbleRandomLines || pickRandomLines()
+    sceneOpen('random', function () { bubbleRenderRandom(lines) }, BUBBLE_MS)
+  } else if (item.kind === 'custom') {
+    sceneOpen('custom', function () { bubbleRenderModules(item.modules || []) }, BUBBLE_MS)
+  } else {
+    sceneOpen('normal', bubbleRenderDefault, BUBBLE_MS)
+  }
+}
 function applyStandaloneNativeState() {
   if (!window.__AIWhaleStandalone) return
   var incoming = window.__AIWhaleState || {}
-  var steps = (incoming.bubble && incoming.bubble.steps) || incoming.bubbleSteps
+  var steps = incoming.bubbleSteps
+  if (!Array.isArray(steps) || !steps.length) steps = incoming.bubble && incoming.bubble.steps
   if (Array.isArray(steps) && steps.length) {
     var nextRevision = String(incoming.bubbleRevision == null ? JSON.stringify(steps) : incoming.bubbleRevision)
+    var stepsKey = JSON.stringify(steps)
     if (window.__AIWhaleAppliedBubbleRevision !== nextRevision) {
+      var stepsChanged = window.__AIWhaleAppliedStepsKey !== stepsKey
       window.__AIWhaleAppliedBubbleRevision = nextRevision
+      window.__AIWhaleAppliedStepsKey = stepsKey
       bubbleCfg = stepsToBubbleCfg(steps)
       bubbleLib = []
       bubbleTapAdvance = true
       applyBubbleCfgSeq()
-      if (bubbleShown && bubbleScene && bubbleScene.kind === 'custom') {
-        bubbleSeqIdx = 0
-        bubbleRoundOn = true
-        bubbleShowSeqNext()
+      if (bubbleShown && bubbleScene && (bubbleScene.kind === 'custom' || bubbleScene.kind === 'random' || bubbleScene.kind === 'normal')) {
+        if (stepsChanged) {
+          bubbleSeqIdx = 0
+          bubbleRoundOn = true
+          bubbleShowSeqNext()
+        } else {
+          bubbleReshowCurrent()
+        }
       }
     }
   }
@@ -10591,6 +10615,8 @@ function applyBubbleCfgSeq() {
   } catch (err) {}
 }
 function loadBubbleCfg() {
+  // Standalone macOS: native __AIWhale.update is the source of truth for steps.
+  if (window.__AIWhaleStandalone) return
   try {
     fetch(BUBBLE_URL, { cache: 'no-store' })
       .then(function (r) { return r.json() })
@@ -12543,6 +12569,7 @@ function configPut(payload, retried) {
     })
 }
 function saveConfig() {
+  if (window.__AIWhaleStandalone) return
   // issue #97：加载完成前只记待办，绝不 PUT（否则把默认值整包写进服务端）
   if (!configLoaded) { configSavePending = true; return }
   try {
@@ -14855,9 +14882,17 @@ fetch(SIZE_URL, { cache: 'no-store' })
       scrollGapInput.value = String(scrollGapPx)
     }
     if (d && typeof d.menuBtnHide === 'boolean') {
-      menuBtnHide = d.menuBtnHide
+      if (window.__AIWhaleStandalone && window.__AIWhaleState && typeof window.__AIWhaleState.showMenuButton === 'boolean') {
+        menuBtnHide = window.__AIWhaleState.showMenuButton === false
+      } else {
+        menuBtnHide = d.menuBtnHide
+      }
       if (menuHideToggle) menuHideToggle.checked = menuBtnHide
       applyMenuBtnHideUI()
+      if (window.__AIWhaleStandalone && !menuBtnHide) {
+        menuBtn.classList.add('dshwv-menu-btn-visible')
+        menuBtn.classList.add('dshwv-menu-btn-pinned')
+      }
     }
     // 相对边框恢复（localStorage 锚点）：窗口变化后保持离边距离。
     // 仅认 v:2 净距离格式；旧格式（含避让距离）废弃，挂件保持默认右下角吸附。
