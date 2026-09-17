@@ -35,6 +35,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/AIBalanceWhale" "$APP/Contents/MacOS/AIBalanceWhale"
 cp "$PROJECT/Resources/WhaleWidget.html" "$APP/Contents/Resources/WhaleWidget.html"
 cp "$PROJECT/Resources/Settings.html" "$APP/Contents/Resources/Settings.html"
+cp "$PROJECT/Resources/NativeContextMenu.html" "$APP/Contents/Resources/NativeContextMenu.html"
 cp "$PROJECT/Resources/Info.plist" "$APP/Contents/Info.plist"
 for asset in DSniang1.png DSniang02.png D1.mp3 D2.mp3 Ya1.mp3 Ya2.mp3 bubble-money1.gif bubble-petpet.gif minecraft-exp-orb.wav rua.gif task-end-a.wav whale-widget.js; do
   test -f "$ROOT/assets/$asset"

@@ -122,7 +122,11 @@ var css = [
   '.dshwv-wrap{white-space:normal;max-width:calc(var(--dshw-u) * 560);line-height:1.2}',
   '.dshwv-hint{font-size:calc(var(--dshw-u) * 56);color:#9fb0d9;letter-spacing:.02em;margin-top:calc(var(--dshw-u) * 9);min-height:calc(var(--dshw-u) * 64);line-height:1.15}',
   '.dshwv-menu-btn{position:absolute;top:calc(40.55% + 4px);right:4px;width:26px;height:26px;border:none;border-radius:6px;background:rgba(32,49,112,.85);cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;z-index:2;opacity:0;transition:opacity .15s ease}',
-  '.dshwv-menu-btn.dshwv-menu-btn-visible{opacity:1}',
+  '.dshwv-menu-btn.dshwv-menu-btn-visible,.dshwv-menu-btn.dshwv-menu-btn-pinned{opacity:1;visibility:visible;pointer-events:auto}',
+  '.dshwv-menu-btn.dshwv-menu-btn-pinned{visibility:visible!important;pointer-events:auto!important;opacity:1!important}',
+  '.dshwv-meter{height:6px;background:#e7ecf6;border-radius:99px;overflow:hidden;margin-top:4px;width:180px;max-width:100%}',
+  '.dshwv-meter i{display:block;height:100%;background:#203170;border-radius:99px}',
+  '.dshwv-nowdex{text-align:left;width:180px;max-width:100%}',
   '.dshwv-menu-btn span{display:block;width:14px;height:2px;background:#fff;border-radius:1px}',
   '.dshwv-menu-btn:hover{background:#203170}',
   '.dshwv-menu-btn-hidden{visibility:hidden;pointer-events:none}',
@@ -616,7 +620,19 @@ menuBtn.type = 'button'
 menuBtn.className = 'dshwv-menu-btn'
 menuBtn.title = '菜单'
 menuBtn.innerHTML = '<span></span><span></span><span></span>'
-menuBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleMenu() })
+if (window.__AIWhaleStandalone) {
+  menuBtn.classList.add('dshwv-menu-btn-visible')
+  menuBtn.classList.add('dshwv-menu-btn-pinned')
+}
+menuBtn.addEventListener('click', function (e) {
+  e.stopPropagation()
+  if (window.__AIWhaleStandalone) {
+    var r = menuBtn.getBoundingClientRect()
+    try { window.__AIWhaleNativePost && window.__AIWhaleNativePost('openContextMenu', { x: r.right, y: r.top }) } catch (err) {}
+    return
+  }
+  toggleMenu()
+})
 
 var menuBox = document.createElement('div')
 menuBox.className = 'dshwv-menu'
@@ -10108,19 +10124,147 @@ var state = {
 }
 // Native macOS state is authoritative for Codex subscriptions.  Keep the
 // upstream renderer and click queue intact, and only update its data model.
+function whaleNowdexAccounts() {
+  var incoming = window.__AIWhaleState || {}
+  return Array.isArray(incoming.accounts) ? incoming.accounts : []
+}
+function whaleRemainLabel(pct) {
+  return Math.max(0, Math.min(100, Math.round(Number(pct) || 0))) + '%'
+}
+function whaleFormatReset(ms) {
+  if (!ms) return '—'
+  var delta = ms - Date.now()
+  if (delta <= 0) return '即将重置'
+  var minutes = Math.round(delta / 60000)
+  if (minutes < 60) return minutes + ' 分钟后'
+  var h = Math.floor(minutes / 60), r = minutes % 60
+  if (h < 48) return r ? (h + ' 小时 ' + r + ' 分后') : (h + ' 小时后')
+  return Math.floor(h / 24) + ' 天后'
+}
+function whaleMoney(a) {
+  return ((a && a.currency === 'CNY') ? '¥' : '$') + Number((a && a.remaining) || 0).toFixed(2)
+}
+function stepsToBubbleCfg(steps) {
+  var items = []
+  for (var i = 0; i < steps.length; i++) {
+    var mods = (steps[i].modules || []).map(function (m) {
+      if (m && m.type === 'random' && Array.isArray(m.lines) && m.lines.length && typeof m.lines[0] === 'string') {
+        return { type: 'random', lines: m.lines.map(function (t) { return { t: t, w: 1, bold: true } }), size: 8 }
+      }
+      if (m && m.type === 'image') return { type: 'image', imgId: m.imgId || m.src || 'bimg_petpet', src: m.src, size: m.size || 6 }
+      return m
+    })
+    items.push({ kind: 'custom', id: steps[i].id, modules: mods })
+  }
+  return { v: 2, items: items, lib: [], tapAdvance: true }
+}
+function whaleMeterEl(remain) {
+  var wrap = document.createElement('div')
+  wrap.className = 'dshwv-meter'
+  var i = document.createElement('i')
+  i.style.width = Math.max(0, Math.min(100, Number(remain) || 0)) + '%'
+  wrap.appendChild(i)
+  return wrap
+}
+function renderNowdexModule(parentEl, m) {
+  if (!window.__AIWhaleStandalone || !m) return false
+  var accs = whaleNowdexAccounts()
+  if (m.type === 'dashboard') {
+    var box = document.createElement('div')
+    box.className = 'dshwv-nowdex'
+    var title = document.createElement('div')
+    title.style.fontWeight = '650'
+    title.style.marginBottom = '4px'
+    title.textContent = '额度总览'
+    box.appendChild(title)
+    var rows = accs.filter(function (a) { return a && a.enabled !== false })
+    if (!rows.length) {
+      var empty = document.createElement('div')
+      empty.textContent = '没有启用的账户'
+      box.appendChild(empty)
+    }
+    rows.forEach(function (a) {
+      var row = document.createElement('div')
+      row.style.marginTop = '6px'
+      var line = document.createElement('div')
+      line.style.display = 'flex'
+      line.style.justifyContent = 'space-between'
+      line.style.fontSize = '12px'
+      var name = document.createElement('span')
+      name.textContent = a.name || a.id
+      var val = document.createElement('span')
+      var w = (a.windows || [])[0] || {}
+      val.textContent = a.kind === 'balance' ? whaleMoney(a) : whaleRemainLabel(w.remainPct)
+      line.appendChild(name)
+      line.appendChild(val)
+      row.appendChild(line)
+      var pct = a.kind === 'balance' ? Math.min(100, (Number(a.remaining || 0) / Math.max(1, Number(a.total || 50))) * 100) : Number(w.remainPct || 0)
+      row.appendChild(whaleMeterEl(pct))
+      box.appendChild(row)
+    })
+    parentEl.appendChild(box)
+    return true
+  }
+  if (m.type === 'quota') {
+    var acc = accs.filter(function (a) { return a.id === m.accountId })[0]
+    var w = acc && ((acc.windows || []).filter(function (x) { return x.id === m.windowId })[0] || acc.windows[0])
+    var box = document.createElement('div')
+    box.className = 'dshwv-nowdex'
+    if (!acc || !w) { box.textContent = '未配置该订阅'; parentEl.appendChild(box); return true }
+    if (m.field === 'remain') { box.textContent = whaleRemainLabel(w.remainPct); parentEl.appendChild(box); return true }
+    if (m.field === 'reset') { box.textContent = whaleFormatReset(w.resetAt); parentEl.appendChild(box); return true }
+    var line = document.createElement('div')
+    line.style.display = 'flex'
+    line.style.justifyContent = 'space-between'
+    line.style.fontSize = '12px'
+    var lab = document.createElement('span')
+    lab.textContent = w.label || ''
+    var val = document.createElement('span')
+    val.textContent = whaleRemainLabel(w.remainPct)
+    line.appendChild(lab)
+    line.appendChild(val)
+    box.appendChild(line)
+    box.appendChild(whaleMeterEl(w.remainPct))
+    var reset = document.createElement('div')
+    reset.style.fontSize = '10px'
+    reset.style.opacity = '.7'
+    reset.style.marginTop = '4px'
+    reset.textContent = whaleFormatReset(w.resetAt)
+    box.appendChild(reset)
+    parentEl.appendChild(box)
+    return true
+  }
+  if (m.type === 'balance') {
+    var acc = accs.filter(function (a) { return a.id === m.accountId })[0]
+    var box = document.createElement('div')
+    box.className = 'dshwv-nowdex'
+    if (!acc) { box.textContent = '未配置该余额账户'; parentEl.appendChild(box); return true }
+    var amount = document.createElement('div')
+    amount.style.fontSize = '22px'
+    amount.style.fontFamily = 'ui-monospace,monospace'
+    amount.textContent = whaleMoney(acc)
+    box.appendChild(amount)
+    var msg = document.createElement('div')
+    msg.style.fontSize = '11px'
+    msg.style.opacity = '.7'
+    msg.textContent = acc.message || ''
+    box.appendChild(msg)
+    parentEl.appendChild(box)
+    return true
+  }
+  return false
+}
 function applyStandaloneNativeState() {
   if (!window.__AIWhaleStandalone) return
   var incoming = window.__AIWhaleState || {}
-  // Desktop and settings share this canonical configuration. A quota refresh
-  // carries the same revision, so it never advances a queue by itself.
-  var incomingBubble = incoming.upstreamBubble
-  if (incomingBubble && typeof incomingBubble === 'object') {
-    var nextRevision = String(incomingBubble.revision == null ? JSON.stringify(incomingBubble) : incomingBubble.revision)
+  var steps = (incoming.bubble && incoming.bubble.steps) || incoming.bubbleSteps
+  if (Array.isArray(steps) && steps.length) {
+    var nextRevision = String(incoming.bubbleRevision == null ? JSON.stringify(steps) : incoming.bubbleRevision)
     if (window.__AIWhaleAppliedBubbleRevision !== nextRevision) {
       window.__AIWhaleAppliedBubbleRevision = nextRevision
-      bubbleCfg = JSON.parse(JSON.stringify(incomingBubble))
-      bubbleLib = Array.isArray(bubbleCfg.lib) ? JSON.parse(JSON.stringify(bubbleCfg.lib)) : []
-      bubbleTapAdvance = bubbleCfg.tapAdvance === true
+      bubbleCfg = stepsToBubbleCfg(steps)
+      bubbleLib = []
+      bubbleTapAdvance = true
       applyBubbleCfgSeq()
       if (bubbleShown && bubbleScene && bubbleScene.kind === 'custom') {
         bubbleSeqIdx = 0
@@ -10129,17 +10273,25 @@ function applyStandaloneNativeState() {
       }
     }
   }
-  var buckets = Array.isArray(incoming.buckets) ? incoming.buckets : []
-  var valid = null
-  for (var i = 0; i < buckets.length; i++) {
-    if (buckets[i] && buckets[i].remainingPercent !== null && buckets[i].remainingPercent !== undefined) { valid = buckets[i]; break }
+  if (typeof incoming.showMenuButton === 'boolean') {
+    menuBtnHide = incoming.showMenuButton === false
+    applyMenuBtnHideUI()
+    if (!menuBtnHide) {
+      menuBtn.classList.add('dshwv-menu-btn-visible')
+      menuBtn.classList.add('dshwv-menu-btn-pinned')
+    } else {
+      menuBtn.classList.remove('dshwv-menu-btn-pinned')
+    }
   }
-  state.status = incoming.status === "ready" || incoming.status === "stale" ? "ok" : "error"
-  state.message = String(incoming.message || "等待 Codex 额度")
-  state.balance = valid ? Number(valid.remainingPercent) : null
-  state.currency = valid ? "%" : null
+  var enabled = whaleNowdexAccounts().filter(function (a) { return a && a.enabled !== false })
+  var first = enabled[0]
+  var win = first && (first.windows || [])[0]
+  state.status = 'ok'
+  state.message = first ? (first.message || '') : '没有启用的账户'
+  state.balance = first && first.kind === 'balance' ? Number(first.remaining || 0) : (win ? Number(win.remainPct) : null)
+  state.currency = first && first.kind === 'balance' ? (first.currency || '') : '%'
   state.todayUsage = null
-  state.usageLabel = valid ? (valid.windowName || valid.name || "Codex 剩余") : state.message
+  state.usageLabel = first ? (first.name || '') : state.message
   state.isPeak = false
   render()
 }
@@ -11774,6 +11926,7 @@ function bubbleRowsTo(parentEl, mods) {
       var chunk = []
       for (var c = s; c < grp.length && c < s + MOD_MAX; c++) {
         var cm = grp[c] || {}
+        if (window.__AIWhaleStandalone && renderNowdexModule(parentEl, cm)) { rows++; continue }
         // v209: 每行内容由独立函数一次算出(文本+随机选中行),不在行间复用状态
         var rowContent = bubbleRowContentOf(cm)
         if (!rowContent || rowContent.txt === '' || rowContent.txt === undefined || rowContent.txt === null) continue
@@ -14384,6 +14537,12 @@ function onDocClickStopper(e) {
 // 右键小鲸鱼唤出菜单(仅在开启「隐藏菜单按钮」时生效;菜单位置与按钮唤出一致)
 function onDocContextMenu(e) {
   try {
+    if (window.__AIWhaleStandalone) {
+      e.preventDefault()
+      var r = (menuBtn && menuBtn.getBoundingClientRect()) || { right: e.clientX, top: e.clientY }
+      try { window.__AIWhaleNativePost && window.__AIWhaleNativePost('openContextMenu', { x: r.right || e.clientX, y: r.top || e.clientY }) } catch (err) {}
+      return
+    }
     if (!menuBtnHide && !window.__AIWhaleStandalone) return
     // 触摸端:原生 contextmenu(部分 Android 约 500ms 就补发)一律吞掉不触发,
     // 唤出时机统一由我们的长按计时决定,避免早于设定时长或重复开合

@@ -12,7 +12,7 @@ plist_print() {
 }
 
 test -x "$APP/Contents/MacOS/AIBalanceWhale"
-for resource in WhaleWidget.html Settings.html AppIcon.icns DSniang1.png Ya1.mp3 task-end-a.wav; do
+for resource in WhaleWidget.html Settings.html NativeContextMenu.html AppIcon.icns DSniang1.png Ya1.mp3 task-end-a.wav; do
   test -f "$APP/Contents/Resources/$resource"
 done
 

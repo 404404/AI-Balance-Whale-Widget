@@ -2,44 +2,43 @@ import Cocoa
 import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let provider = CodexHTTPUsageClient()
-    private let externalProvider = ExternalProviderClient()
+    private let quota = QuotaRefreshCoordinator()
     private var whaleWindow: WhaleWindowController!
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem!
     private var refreshTimer: Timer?
     private var isSleeping = false
     private(set) var latestProviderState = ProviderState()
-    private(set) var latestExternalBalances: [[String: Any]] = []
+    private(set) var latestAccounts: [[String: Any]] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        provider.onStateChange = { [weak self] state in
-            self?.latestProviderState = state
-            self?.whaleWindow?.render(state, externalBalances: self?.latestExternalBalances ?? [])
-            self?.updateMenuTitles()
+        latestAccounts = WhaleConfigurationStore.shared.publicAccounts()
+        quota.onAccountsUpdated = { [weak self] accounts in
+            self?.latestAccounts = accounts
+            self?.whaleWindow?.renderCurrentState()
             self?.settingsWindow?.refreshConnectionState()
         }
-        whaleWindow = WhaleWindowController(provider: provider)
+        quota.onCodexConnection = { [weak self] state in
+            self?.latestProviderState = state
+            self?.settingsWindow?.refreshConnectionState()
+        }
+        whaleWindow = WhaleWindowController()
+        whaleWindow.onRefresh = { [weak self] in self?.quota.refresh() }
         whaleWindow.load()
         whaleWindow.show()
-        externalProvider.onUpdate = { [weak self] balances in
-            self?.latestExternalBalances = balances
-            self?.whaleWindow?.render(self?.latestProviderState ?? ProviderState(), externalBalances: balances)
-        }
-        externalProvider.refresh()
+        quota.refresh()
         setupStatusItem()
         setupObservers()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             guard let self, !isSleeping else { return }
-            provider.refresh()
-            externalProvider.refresh()
+            quota.refresh()
         }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         refreshTimer?.invalidate()
-        provider.stopImmediately()
+        quota.stopImmediately()
         return .terminateNow
     }
 
@@ -50,17 +49,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.onAppearanceChanged = { [weak self] in
                 guard let self else { return }
                 whaleWindow.applyPreferences()
-                whaleWindow.render(latestProviderState, externalBalances: latestExternalBalances)
-                externalProvider.refresh()
+                whaleWindow.renderCurrentState()
+                quota.refresh()
                 updateMenuTitles()
             }
-            controller.onConnectionChanged = { [weak self] in self?.provider.configurationChanged() }
+            controller.onConnectionChanged = { [weak self] in self?.quota.configurationChanged() }
             controller.onTestConnection = { [weak self] path, home in
                 guard let self else { return }
                 AppPreferences.shared.codexPath = path
                 AppPreferences.shared.codexHome = home
-                self.provider.configurationChanged()
-                self.externalProvider.refresh()
+                self.quota.configurationChanged()
+            }
+            controller.onRefreshAccounts = { [weak self] id in
+                if let id { self?.quota.refreshAccount(id: id) } else { self?.quota.refresh() }
             }
             controller.onResetLayout = { [weak self] in self?.whaleWindow.resetPositionAndSize() }
             settingsWindow = controller
@@ -79,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuTitles()
     }
 
-    @objc private func refreshNow(_ sender: Any? = nil) { provider.refresh(); externalProvider.refresh() }
+    @objc private func refreshNow(_ sender: Any? = nil) { quota.refresh() }
 
     @objc private func restoreDisplay(_ sender: Any? = nil) {
         whaleWindow.restoreDisplay()
@@ -164,19 +165,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             self?.isSleeping = true
-            self?.provider.setSleeping(true)
+            self?.quota.setSleeping(true)
         }
         center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.isSleeping = false
-            self?.provider.setSleeping(false)
+            self?.quota.setSleeping(false)
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             self?.whaleWindow?.clampAndSave()
         }
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings(_:)), name: .aiWhaleOpenSettings, object: nil)
         NotificationCenter.default.addObserver(forName: .aiWhaleProviderConfigurationChanged, object: nil, queue: .main) { [weak self] _ in
-            self?.externalProvider.refresh()
-            if let self { self.whaleWindow?.render(self.latestProviderState, externalBalances: self.latestExternalBalances) }
+            self?.quota.refresh()
+            self?.whaleWindow?.renderCurrentState()
         }
     }
 

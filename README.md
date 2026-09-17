@@ -19,8 +19,8 @@
 
 ```bash
 swift test --package-path MacOSApp
-APP_VERSION=0.1.0-beta.10 BUILD_NUMBER=10 MacOSApp/scripts/build.sh
-APP_VERSION=0.1.0-beta.10 MacOSApp/scripts/create-dmg.sh
+APP_VERSION=0.1.0-beta.11 BUILD_NUMBER=11 MacOSApp/scripts/build.sh
+APP_VERSION=0.1.0-beta.11 MacOSApp/scripts/create-dmg.sh
 ```
 
 GitHub Actions 的 macOS CI 在 PR 与相关分支 push 时运行脱敏额度 fixture 测试并检查 arm64 App。发布 workflow 只在 `macos-v*` 标签或默认分支已包含该 workflow 后的 `workflow_dispatch` 运行，输入会严格校验版本与标签、拒绝现有标签/Release，并在同一 SHA 上构建、检查 DMG、上传 `SHA256SUMS` 后再公开预发布。普通 push 不发布 npm 或 Release；旧 DSH 插件版本仍由根目录 `package.json` 单独管理，保留上游插件用途与 MIT 许可证。

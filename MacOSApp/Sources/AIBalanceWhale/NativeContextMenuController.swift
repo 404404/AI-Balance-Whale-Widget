@@ -6,7 +6,7 @@ import WebKit
 /// boundary while preserving the upstream menu's visual language and actions.
 final class NativeContextMenuController: NSObject, WKScriptMessageHandler {
     enum Action: String {
-        case toggleBubble, refresh, settingsBubble, settingsResources, settingsSound, settingsUsage, restoreDisplay
+        case toggleBubble, refresh, settings, settingsBubble, settingsAccounts, restoreDisplay
     }
 
     var onAction: ((Action) -> Void)?

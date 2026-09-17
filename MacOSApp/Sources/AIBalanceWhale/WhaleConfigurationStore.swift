@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CodexCore
 
 final class WhaleConfigurationStore {
     static let shared = WhaleConfigurationStore()
@@ -24,13 +25,21 @@ final class WhaleConfigurationStore {
 
     func snapshot() -> [String: Any] { queue.sync { object } }
 
+    func accounts() -> [[String: Any]] {
+        (snapshot()["accounts"] as? [[String: Any]]) ?? []
+    }
+
+    func bubbleSteps() -> [[String: Any]] {
+        ((snapshot()["bubble"] as? [String: Any])?["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
+    }
+
     func save(_ incoming: [String: Any]) {
         queue.sync {
             var next = Self.defaultObject()
             Self.merge(&next, object)
             Self.merge(&next, incoming)
-            Self.migrateBubble(&next)
-            next["schemaVersion"] = 3
+            next = AccountCatalog.migrate(next)
+            next["accounts"] = ((next["accounts"] as? [[String: Any]]) ?? []).map(AccountCatalog.stripSecret)
             object = next
             write(next, to: configurationURL)
         }
@@ -42,20 +51,17 @@ final class WhaleConfigurationStore {
         save(next)
     }
 
-    func saveUpstreamBubble(_ raw: [String: Any]) -> (configuration: [String: Any], revision: Int)? {
-        guard !raw.isEmpty else { return nil }
-        return queue.sync {
-            var next = object
-            var canonical = raw
-            let revision = ((next["bubbleRevision"] as? NSNumber)?.intValue ?? 0) + 1
-            canonical["revision"] = revision
-            next["upstreamBubble"] = canonical
-            next["bubbleRevision"] = revision
-            next["schemaVersion"] = 3
-            object = next
-            write(next, to: configurationURL)
-            return (canonical, revision)
-        }
+    func replaceAccounts(_ accounts: [[String: Any]]) {
+        savePatch(["accounts": accounts.map(AccountCatalog.stripSecret)])
+    }
+
+    func updateAccount(id: String, patch: [String: Any]) {
+        var accounts = self.accounts()
+        guard let index = accounts.firstIndex(where: { ($0["id"] as? String) == id }) else { return }
+        var next = accounts[index]
+        Self.merge(&next, patch)
+        accounts[index] = AccountCatalog.stripSecret(next)
+        replaceAccounts(accounts)
     }
 
     func resetLayout() {
@@ -87,8 +93,7 @@ final class WhaleConfigurationStore {
             let url: URL
             if entry?["builtin"] as? Bool == true {
                 guard let base = Bundle.main.resourceURL else { return nil }
-                let bundled = base.appendingPathComponent(relative)
-                url = bundled
+                url = base.appendingPathComponent(relative)
             } else {
                 url = resourceDirectory.appendingPathComponent(relative)
             }
@@ -110,8 +115,7 @@ final class WhaleConfigurationStore {
             try? fileManager.createDirectory(at: kindDirectory, withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
             var list = resources(kind: kind)
-            let entry: [String: Any] = ["id": id, "name": name, "relativePath": "\(kind)/\(fileName)", "mime": mime, "builtin": false]
-            list.append(entry)
+            list.append(["id": id, "name": name, "relativePath": "\(kind)/\(fileName)", "mime": mime, "builtin": false])
             setResources(list, kind: kind)
             write(object, to: configurationURL)
         }
@@ -138,12 +142,14 @@ final class WhaleConfigurationStore {
 
     func saveCredential(reference: String, value: String) -> Bool {
         let trimmedReference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedReference.isEmpty, !value.isEmpty else { return false }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReference.isEmpty else { return false }
+        if trimmedValue.isEmpty { return deleteCredential(reference: trimmedReference) }
         let service = "com.404404.AIBalanceWhale.credentials"
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: trimmedReference]
         SecItemDelete(query as CFDictionary)
         var add = query
-        add[kSecValueData as String] = Data(value.utf8)
+        add[kSecValueData as String] = Data(trimmedValue.utf8)
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
@@ -162,6 +168,20 @@ final class WhaleConfigurationStore {
         return String(data: data, encoding: .utf8)
     }
 
+    func hasCredential(reference: String) -> Bool {
+        guard let value = credential(reference: reference) else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func publicAccounts() -> [[String: Any]] {
+        accounts().map { account in
+            var next = AccountCatalog.stripSecret(account)
+            let keyRef = next["keyRef"] as? String ?? ""
+            next["hasToken"] = hasCredential(reference: keyRef)
+            return next
+        }
+    }
+
     private func loadAndMigrate() -> [String: Any] {
         guard let data = try? Data(contentsOf: configurationURL), let loaded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             let defaults = Self.defaultObject()
@@ -169,15 +189,10 @@ final class WhaleConfigurationStore {
             return defaults
         }
         var merged = Self.defaultObject()
-        // A schema-2 installation has no canonical upstreamBubble. Do not
-        // let the schema-3 default mask its legacy bubble before migration.
-        if loaded["upstreamBubble"] == nil {
-            merged.removeValue(forKey: "upstreamBubble")
-        }
         Self.merge(&merged, loaded)
-        Self.migrateBubble(&merged)
-        if (loaded["schemaVersion"] as? Int ?? 1) < 3 {
-            merged["schemaVersion"] = 3
+        merged = AccountCatalog.migrate(merged)
+        merged["accounts"] = ((merged["accounts"] as? [[String: Any]]) ?? []).map(AccountCatalog.stripSecret)
+        if (loaded["schemaVersion"] as? Int ?? 1) < AccountCatalog.schemaVersion {
             write(merged, to: configurationURL)
         }
         return merged
@@ -229,44 +244,31 @@ final class WhaleConfigurationStore {
 
     private static func defaultObject() -> [String: Any] {
         [
-            "schemaVersion": 3,
+            "schemaVersion": AccountCatalog.schemaVersion,
             "layout": ["scale": 1.0, "alwaysOnTop": false, "allSpaces": false, "mousePassthrough": false, "launchAtLogin": false],
             "appearance": ["snapEnabled": true, "showMenuButton": true, "bubbleEnabled": true, "flip": false, "roleId": "builtin-dsniang"],
             "sound": ["enabled": true, "volume": 0.45, "set": "duck", "press": "Ya1.mp3", "release": "Ya2.mp3", "taskEnd": "end_a"],
-            "bubble": ["closeAfterSeconds": 0, "advanceOnClick": true, "firstAction": "show", "againAction": "toggle", "library": [], "steps": [["kind": "status", "text": "Codex 订阅额度"]]],
-            "upstreamBubble": ["v": 1, "items": [], "lib": [], "tapAdvance": false],
-            "bubbleRevision": 0,
-            "providers": ProviderTemplates.all.filter { (($0["id"] as? String) == "deepseek") || (($0["id"] as? String) == "codex") },
-            "reminders": ["enabled": false, "threshold": 20, "budget": NSNull()],
+            "bubble": [
+                "closeAfterSeconds": 0,
+                "advanceOnClick": true,
+                "firstAction": "show",
+                "againAction": "toggle",
+                "steps": AccountCatalog.defaultBubbleSteps(),
+            ],
+            "accounts": AccountCatalog.defaultAccounts(),
+            "reminders": ["enabled": true, "threshold": 15, "budget": NSNull()],
             "records": ["source": "未连接事件来源", "items": []],
-            "resources": ["roles": [["id": "builtin-dsniang", "name": "DS娘（默认）", "relativePath": "DSniang1.png", "mime": "image/png", "builtin": true]], "bubbles": [["id": "builtin-money", "name": "金币", "relativePath": "bubble-money1.gif", "mime": "image/gif", "builtin": true], ["id": "builtin-petpet", "name": "Petpet", "relativePath": "bubble-petpet.gif", "mime": "image/gif", "builtin": true]], "audio": [["id": "builtin-press", "name": "按下", "relativePath": "Ya1.mp3", "mime": "audio/mpeg", "builtin": true], ["id": "builtin-release", "name": "松开", "relativePath": "Ya2.mp3", "mime": "audio/mpeg", "builtin": true]],
-        ]]
-    }
-
-    private static func migrateBubble(_ configuration: inout [String: Any]) {
-        if let upstream = configuration["upstreamBubble"] as? [String: Any], upstream["v"] != nil { return }
-        let legacy = configuration["bubble"] as? [String: Any] ?? [:]
-        let steps = legacy["steps"] as? [[String: Any]] ?? []
-        var modules: [[String: Any]] = []
-        for step in steps {
-            let kind = step["kind"] as? String ?? "text"
-            switch kind {
-            case "status", "dynamic":
-                modules.append(["type": "plan", "modelId": "codex", "size": step["fontSize"] ?? 8, "tpl": step["text"] as? String ?? "额度 {plan_left}"])
-            case "image", "gif":
-                modules.append(["type": "image", "imgId": step["resourceId"] as? String ?? "bimg_petpet", "size": step["fontSize"] ?? 6])
-            case "link":
-                modules.append(["type": "link", "text": step["text"] as? String ?? "打开链接", "url": step["url"] as? String ?? "", "size": step["fontSize"] ?? 8])
-            default:
-                modules.append(["type": "text", "text": step["text"] as? String ?? "", "size": step["fontSize"] ?? 8, "color": step["color"] as? String ?? ""])
-            }
-        }
-        configuration["upstreamBubble"] = [
-            "v": 1,
-            "items": modules.isEmpty ? [] : [["kind": "custom", "modules": modules]],
-            "lib": [],
-            "tapAdvance": (legacy["advanceOnClick"] as? NSNumber)?.boolValue ?? false,
+            "resources": [
+                "roles": [["id": "builtin-dsniang", "name": "DS娘（默认）", "relativePath": "DSniang1.png", "mime": "image/png", "builtin": true]],
+                "bubbles": [
+                    ["id": "builtin-money", "name": "金币", "relativePath": "bubble-money1.gif", "mime": "image/gif", "builtin": true],
+                    ["id": "builtin-petpet", "name": "Petpet", "relativePath": "bubble-petpet.gif", "mime": "image/gif", "builtin": true],
+                ],
+                "audio": [
+                    ["id": "builtin-press", "name": "按下", "relativePath": "Ya1.mp3", "mime": "audio/mpeg", "builtin": true],
+                    ["id": "builtin-release", "name": "松开", "relativePath": "Ya2.mp3", "mime": "audio/mpeg", "builtin": true],
+                ],
+            ],
         ]
-        if configuration["bubbleRevision"] == nil { configuration["bubbleRevision"] = 0 }
     }
 }

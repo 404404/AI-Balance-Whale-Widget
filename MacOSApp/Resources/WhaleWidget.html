@@ -15,6 +15,7 @@ html .dshwv-body { width: 100% !important; height: 100% !important; position: re
 html .dshwv-img { right: auto !important; left: calc(32px * var(--ai-scale)) !important; bottom: 0 !important; width: calc(184px * var(--ai-scale)) !important; height: calc(174px * var(--ai-scale)) !important; object-fit: contain !important; object-position: center bottom !important; }
 html .dshwv-pop { left: .8% !important; top: 0 !important; width: 98.4% !important; height: auto !important; }
 html .dshwv-menu { max-height: 86vh; overflow-y: auto; }
+html .dshwv-menu-btn.dshwv-menu-btn-pinned { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; }
 html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
 </style>
 </head>
@@ -118,9 +119,9 @@ html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
   var lastLayoutSignature = "";
   function reportLayout() {
     requestAnimationFrame(function () {
-      var root = document.querySelector(".dshwv-root"), whale = document.querySelector(".dshwv-img"), bubble = document.querySelector(".dshwv-pop");
+      var root = document.querySelector(".dshwv-root"), whale = document.querySelector(".dshwv-img"), bubble = document.querySelector(".dshwv-pop"), menu = document.querySelector(".dshwv-menu-btn");
       if (!root || !whale || !bubble) return;
-      var rr = root.getBoundingClientRect(), wr = whale.getBoundingClientRect(), br = bubble.getBoundingClientRect();
+      var rr = root.getBoundingClientRect(), wr = whale.getBoundingClientRect(), br = bubble.getBoundingClientRect(), mr = menu ? menu.getBoundingClientRect() : { x: 0, y: 0, width: 0, height: 0 };
       var visible = bubble.classList.contains("dshwv-pop-open");
       var signature = [visible, rr.width, rr.height, wr.x, wr.y, wr.width, wr.height, br.x, br.y, br.width, br.height].map(function (x) { return Number(x).toFixed(2) }).join("/");
       if (signature === lastLayoutSignature) return;
@@ -129,7 +130,7 @@ html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
       if (!isFinite(scale) || scale <= 0) scale = 1;
       // Native layout works in unscaled CSS points; report the actual SVG
       // bubble height rather than the old compact sentinel height.
-      post("bubbleLayout", { embedded: false, visible: visible, height: Math.ceil(br.height / scale), innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height });
+      post("bubbleLayout", { embedded: false, visible: visible, height: Math.ceil(br.height / scale), innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height, menuX: mr.x, menuY: mr.y, menuW: mr.width, menuH: mr.height });
     });
   }
   window.__AIWhaleHostDataUpdated = function () { var s = window.__AIWhaleState || {}; var image = document.querySelector(".dshwv-img"); if (image && s.roleImage && image.getAttribute("src") !== s.roleImage) image.src = s.roleImage; var root = document.querySelector(".dshwv-root"); if (root) root.classList.toggle("dshwv-left", !!s.flip); window.dispatchEvent(new Event("aiwhale-data")); reportLayout(); }

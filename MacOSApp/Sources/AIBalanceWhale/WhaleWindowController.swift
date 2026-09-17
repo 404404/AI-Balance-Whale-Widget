@@ -43,7 +43,7 @@ private struct NativeDragSession {
 }
 
 final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate {
-    let provider: CodexHTTPUsageClient
+    var onRefresh: (() -> Void)?
     private let panel: WhalePanel
     private let webView: WKWebView
 
@@ -65,6 +65,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private var bubbleHeight: CGFloat = WhaleLayout.defaultBubbleHeight
     private var debugEvents: [(Date, String)] = []
     private var lastWhaleMetrics: WhaleGeometryMetrics?
+    private var lastMenuButtonMetrics: WhaleGeometryMetrics?
     private var nativeDragSession: NativeDragSession?
     private var lastSentLayoutKey: String?
     private lazy var hostAdapter = WhaleHostAdapter(owner: self)
@@ -74,8 +75,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     // "embedded compact" overlay: opening it grows the frame upward.
     private let usesEmbeddedUpstreamBubble = false
 
-    init(provider: CodexHTTPUsageClient) {
-        self.provider = provider
+    init() {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let contentController = WKUserContentController()
@@ -196,7 +196,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         )
     }
 
-    func refresh() { provider.refresh() }
+    func refresh() { onRefresh?() }
 
     func bubbleConfigurationDidChange(_ configuration: [String: Any]) {
         // The same canonical upstreamBubble object is sent to the desktop
@@ -222,12 +222,20 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             if navigationFinished { synchronizeFrontend() }
             if refreshRequestedForGeneration != navigationGeneration {
                 refreshRequestedForGeneration = navigationGeneration
-                provider.refresh()
+                refresh()
             }
         case "hostRequest":
             handleHostRequest(body)
         case "refresh":
-            provider.refresh()
+            refresh()
+        case "openContextMenu":
+            let screenPoint: NSPoint
+            if let x = body["x"] as? NSNumber, let y = body["y"] as? NSNumber {
+                screenPoint = panel.convertPoint(toScreen: NSPoint(x: x.doubleValue, y: panel.frame.height - y.doubleValue))
+            } else {
+                screenPoint = NSPoint(x: panel.frame.maxX - 8, y: panel.frame.midY)
+            }
+            contextMenu.show(at: screenPoint, preferredScreen: screenForPanel(panel))
         case "openSettings":
             openSettings(page: body["page"] as? String)
         case "toggleBubble":
@@ -242,6 +250,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             let changed = visible != bubbleVisible || abs(requestedHeight - bubbleHeight) > 0.5
             bubbleVisible = visible
             bubbleHeight = min(max(requestedHeight, 120), WhaleLayout.maximumBubbleHeight)
+            recordMetrics(body)
             if changed { resizeToCurrentLayout(preserveAnchor: true) }
         case "layoutMetrics":
             recordMetrics(body)
@@ -291,42 +300,29 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     }
 
     func render(_ state: ProviderState, externalBalances: [[String: Any]] = []) {
-        var buckets: [[String: Any]] = []
-        for bucket in state.buckets {
-            var item: [String: Any] = [
-                "id": bucket.id,
-                "name": bucket.windowName,
-                "window": bucket.window.rawValue,
-                "windowName": RateLimitPresentation.windowName(
-                    for: bucket,
-                    durationMinutes: bucket.windowDurationMinutes
-                )
-            ]
-            if let used = bucket.usedPercent { item["usedPercent"] = used }
-            if let remaining = bucket.remainingPercent { item["remainingPercent"] = remaining }
-            if let reset = bucket.resetsAt { item["resetsAt"] = reset.timeIntervalSince1970 * 1000 }
-            buckets.append(item)
-        }
+        renderCurrentState()
+    }
 
-        let configuration = WhaleConfigurationStore.shared.snapshot()
+    func renderCurrentState() {
+        let store = WhaleConfigurationStore.shared
+        let configuration = store.snapshot()
         let appearance = configuration["appearance"] as? [String: Any] ?? [:]
         let sound = configuration["sound"] as? [String: Any] ?? [:]
-        let bubble = normalizedBubble(configuration["upstreamBubble"] as? [String: Any] ?? [:])
+        let bubble = configuration["bubble"] as? [String: Any] ?? [:]
+        let steps = (bubble["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
+        let accounts = store.publicAccounts()
         let roleID = appearance["roleId"] as? String
-        let roleImage = roleID.flatMap {
-            WhaleConfigurationStore.shared.resourceDataURL(kind: "roles", id: $0)
-        } ?? "DSniang1.png"
+        let roleImage = roleID.flatMap { store.resourceDataURL(kind: "roles", id: $0) } ?? "DSniang1.png"
         let pressRef = sound["press"] as? String ?? "Ya1.mp3"
         let releaseRef = sound["release"] as? String ?? "Ya2.mp3"
-        let pressSound = WhaleConfigurationStore.shared.resourceDataURL(kind: "audio", id: pressRef) ?? pressRef
-        let releaseSound = WhaleConfigurationStore.shared.resourceDataURL(kind: "audio", id: releaseRef) ?? releaseRef
+        let pressSound = store.resourceDataURL(kind: "audio", id: pressRef) ?? pressRef
+        let releaseSound = store.resourceDataURL(kind: "audio", id: releaseRef) ?? releaseRef
+        let revision = steps.map { ($0["id"] as? String) ?? "" }.joined(separator: "/") + "/" + String(accounts.count)
         let object: [String: Any] = [
-            "status": state.status.rawValue,
-            "message": state.message,
-            "email": state.email ?? NSNull(),
-            "planType": state.planType ?? NSNull(),
-            "lastUpdated": state.lastUpdated.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull(),
-            "buckets": buckets,
+            "accounts": accounts,
+            "bubble": ["steps": steps, "advanceOnClick": bubble["advanceOnClick"] ?? true, "closeAfterSeconds": bubble["closeAfterSeconds"] ?? 0],
+            "bubbleSteps": steps,
+            "bubbleRevision": revision,
             "scale": AppPreferences.shared.scale,
             "soundEnabled": AppPreferences.shared.soundEnabled,
             "bubbleCloseAfterSeconds": AppPreferences.shared.bubbleCloseAfterSeconds,
@@ -335,9 +331,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             "roleImage": roleImage,
             "soundVolume": sound["volume"] ?? 0.45,
             "pressSound": pressSound,
-            "releaseSound": releaseSound,
-            "upstreamBubble": bubble,
-            "vendors": externalBalances
+            "releaseSound": releaseSound
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let payloadJSON = String(data: data, encoding: .utf8) else { return }
@@ -365,11 +359,6 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
 
     func diagnostics() -> [[String: Any]] {
         debugEvents.map { ["time": $0.0.timeIntervalSince1970, "event": $0.1] }
-    }
-
-    func renderCurrentState() {
-        guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
-        render(appDelegate.latestProviderState, externalBalances: appDelegate.latestExternalBalances)
     }
 
     private func restoreFrame() {
@@ -551,6 +540,12 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
            let height = body["whaleH"] as? NSNumber {
             lastWhaleMetrics = WhaleGeometryMetrics(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue), width: CGFloat(width.doubleValue), height: CGFloat(height.doubleValue))
         }
+        if let x = body["menuX"] as? NSNumber,
+           let y = body["menuY"] as? NSNumber,
+           let width = body["menuW"] as? NSNumber,
+           let height = body["menuH"] as? NSNumber {
+            lastMenuButtonMetrics = WhaleGeometryMetrics(x: CGFloat(x.doubleValue), y: CGFloat(y.doubleValue), width: CGFloat(width.doubleValue), height: CGFloat(height.doubleValue))
+        }
         recordDebug("metrics inner=\(number("innerWidth"))x\(number("innerHeight")) whale=\(number("whaleX")),\(number("whaleY")),\(number("whaleW"))x\(number("whaleH")) bubble=\(number("bubbleX")),\(number("bubbleY")),\(number("bubbleW"))x\(number("bubbleH"))")
     }
 
@@ -558,7 +553,8 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         guard event.buttonNumber == 0,
               !AppPreferences.shared.mousePassthrough,
               let point = localDOMPoint(for: event),
-              isWhalePoint(point) else { return false }
+              isWhalePoint(point),
+              !isMenuButtonPoint(point) else { return false }
         let screenPoint = panel.convertPoint(toScreen: event.locationInWindow)
         nativeDragSession = NativeDragSession(startScreen: screenPoint, originalFrame: panel.frame)
         evaluate("window.__AIWhale && window.__AIWhale.nativePointerDown && window.__AIWhale.nativePointerDown()")
@@ -604,15 +600,13 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         case .toggleBubble:
             evaluate("window.__AIWhale && window.__AIWhale.toggleBubble()")
         case .refresh:
-            provider.refresh()
+            refresh()
+        case .settings:
+            openSettings(page: "general")
         case .settingsBubble:
             openSettings(page: "bubbles")
-        case .settingsResources:
-            openSettings(page: "resources")
-        case .settingsSound:
-            openSettings(page: "sounds")
-        case .settingsUsage:
-            openSettings(page: "reminders")
+        case .settingsAccounts:
+            openSettings(page: "accounts")
         case .restoreDisplay:
             restoreDisplay()
         }
@@ -634,6 +628,12 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             width: bounds.width * 0.742,
             height: bounds.height * 0.946
         )
+        return point.x >= metrics.x && point.x <= metrics.x + metrics.width &&
+            point.y >= metrics.y && point.y <= metrics.y + metrics.height
+    }
+
+    private func isMenuButtonPoint(_ point: NSPoint) -> Bool {
+        guard let metrics = lastMenuButtonMetrics, metrics.width > 0, metrics.height > 0 else { return false }
         return point.x >= metrics.x && point.x <= metrics.x + metrics.width &&
             point.y >= metrics.y && point.y <= metrics.y + metrics.height
     }

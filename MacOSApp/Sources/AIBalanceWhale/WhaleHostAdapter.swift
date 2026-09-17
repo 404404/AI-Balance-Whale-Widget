@@ -1,5 +1,6 @@
 import Cocoa
 import Foundation
+import CodexCore
 
 final class WhaleHostAdapter {
     weak var owner: WhaleWindowController?
@@ -25,11 +26,10 @@ final class WhaleHostAdapter {
             if verb == "POST" || verb == "PUT" {
                 let next = bodyObject(body)
                 guard !next.isEmpty else { return (400, ["ok": false, "error": "泡泡配置为空"]) }
-                guard let saved = WhaleConfigurationStore.shared.saveUpstreamBubble(next) else {
-                    return (400, ["ok": false, "error": "泡泡配置无法保存"])
-                }
-                owner?.bubbleConfigurationDidChange(saved.configuration)
-                return (200, ["ok": true, "config": saved.configuration, "revision": saved.revision])
+                let steps = AccountCatalog.canonicalSteps(fromPosted: next)
+                WhaleConfigurationStore.shared.savePatch(["bubble": ["steps": steps]])
+                owner?.bubbleConfigurationDidChange(["steps": steps])
+                return (200, ["ok": true, "config": bubbleConfig(), "revision": steps.count])
             }
         case "/dsh-whale/api-models.json":
             if verb == "GET" { return (200, apiModelsPayload()) }
@@ -95,7 +95,7 @@ final class WhaleHostAdapter {
     }
 
     private func externalBalances() -> [[String: Any]] {
-        (NSApp.delegate as? AppDelegate)?.latestExternalBalances ?? []
+        (NSApp.delegate as? AppDelegate)?.latestAccounts ?? []
     }
 
     private func sizePayload() -> [String: Any] {
@@ -144,15 +144,17 @@ final class WhaleHostAdapter {
 
     private func bubbleConfig() -> [String: Any] {
         let snapshot = WhaleConfigurationStore.shared.snapshot()
-        if let saved = snapshot["upstreamBubble"] as? [String: Any], !saved.isEmpty { return saved }
-        if let legacy = snapshot["bubble"] as? [String: Any], let steps = legacy["steps"] as? [[String: Any]], !steps.isEmpty, !(steps.count == 1 && (steps[0]["kind"] as? String) == "status" && ((steps[0]["text"] as? String) ?? "") == "Codex 订阅额度") {
-            return migrateLegacyBubble(steps: steps, advance: (legacy["advanceOnClick"] as? NSNumber)?.boolValue ?? true)
-        }
+        let bubble = snapshot["bubble"] as? [String: Any] ?? [:]
+        let steps = (bubble["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
         return [
-            "v": 1,
-            "items": defaultBubbleItems(),
+            "v": 2,
+            "steps": steps,
+            "accounts": WhaleConfigurationStore.shared.publicAccounts(),
+            "items": steps.map { step -> [String: Any] in
+                ["kind": "custom", "id": step["id"] as? String ?? "", "modules": step["modules"] as? [[String: Any]] ?? []]
+            },
             "lib": [],
-            "tapAdvance": false
+            "tapAdvance": true
         ]
     }
 

@@ -32,13 +32,15 @@ final class WidgetWebViewTests: XCTestCase {
                 let payload: [String: Any] = [
                     "config": [
                         "layout": ["scale": 1.0],
-                        "appearance": ["snapEnabled": true],
+                        "appearance": ["snapEnabled": true, "showMenuButton": true],
                         "sound": ["enabled": true],
-                        "bubble": ["steps": []],
-                        "providers": [],
-                        "reminders": [:],
+                        "bubble": ["steps": [["id": "step-dash", "modules": [["type": "dashboard"]]]]],
+                        "accounts": [["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]]],
+                        "reminders": ["enabled": true, "threshold": 15],
                         "records": [:]
                     ],
+                    "accounts": [["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]]],
+                    "providerMeta": ["codex": ["label": "Codex / ChatGPT", "help": "test", "tokenHint": "session"]],
                     "templates": [],
                     "resources": ["roles": [], "bubbles": [], "audio": []],
                     "app": ["version": "test", "build": "test", "connection": [:], "diagnostics": []]
@@ -83,7 +85,7 @@ final class WidgetWebViewTests: XCTestCase {
         }
     }
 
-    func testPackagedSettingsMountsUpstreamEditorWithoutIframe() async throws {
+    func testPackagedSettingsHasMergedPagesWithoutUpstreamEditor() async throws {
         let resourceRoot = try makeResourceRoot()
         let settings = resourceRoot.appendingPathComponent("Settings.html")
         let configuration = WKWebViewConfiguration()
@@ -106,45 +108,44 @@ final class WidgetWebViewTests: XCTestCase {
         await fulfillment(of: [loaded], timeout: 10)
 
         for _ in 0..<40 {
-            let ready = try await evaluate(webView, "Boolean(window.__AIWhaleEditorAPI && document.querySelector('.dshwv-bubmask'))")
+            let ready = try await evaluate(webView, "Boolean(window.__AIWhaleSettings && document.querySelector('#nav button'))")
             if (ready as? Bool) == true { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        _ = try await evaluate(webView, "document.querySelector(\"#nav button[data-page='bubbles']\").click()")
-        try await Task.sleep(nanoseconds: 100_000_000)
-        let result = try await evaluate(webView, """
+
+        let pages = try await evaluate(webView, """
           (function () {
-            var editorMask = document.querySelector('#upstreamEditorMount .dshwv-bubmask')
-            return {
-              editor: Boolean(window.__AIWhaleEditorAPI),
-              // Do not call the editor API here: navigating from the app's own
-              // settings sidebar must already expose the upstream editor.
-              mask: Boolean(editorMask && getComputedStyle(editorMask).display === 'flex'),
-              rootHidden: getComputedStyle(document.querySelector('.dshwv-root')).display === 'none',
-              iframe: Boolean(document.querySelector('iframe'))
-            }
+            var ids = ['general','accounts','bubbles','appearance','sounds','alerts','about']
+            var present = {}
+            ids.forEach(function (id) {
+              present[id] = Boolean(document.querySelector('.page[data-page=\"' + id + '\"]') && document.querySelector('#nav button[data-page=\"' + id + '\"]'))
+            })
+            return present
           }())
         """) as? [String: Any] ?? [:]
-        let diagnostic = try await evaluate(webView, """
+        for id in ["general", "accounts", "bubbles", "appearance", "sounds", "alerts", "about"] {
+            XCTAssertEqual(pages[id] as? Bool, true, "missing settings page \(id)")
+        }
+
+        _ = try await evaluate(webView, "document.querySelector(\"#nav button[data-page='bubbles']\").click()")
+        try await Task.sleep(nanoseconds: 80_000_000)
+        let bubbles = try await evaluate(webView, """
           ({
-            standalone: Boolean(window.__AIWhaleStandalone),
-            editorMode: Boolean(window.__AIWhaleEditorMode),
-            widget: Boolean(window.__dshWhaleWidget),
-            init: Boolean(window.__dshWhaleInit),
-            api: Boolean(window.__AIWhaleEditorAPI),
-            settings: Boolean(window.__AIWhaleSettings),
+            preview: Boolean(document.querySelector('.preview')),
+            iframe: Boolean(document.querySelector('iframe')),
             mount: Boolean(document.querySelector('#upstreamEditorMount')),
-            maskCount: document.querySelectorAll('.dshwv-bubmask').length,
-            maskParents: Array.from(document.querySelectorAll('.dshwv-bubmask')).map(function(x){return x.parentElement && x.parentElement.id || ''}),
-            openError: window.__AIWhaleEditorOpenError || '',
-            errors: window.__AIWhaleTestErrors || []
+            editor: Boolean(window.__AIWhaleEditorMount || window.__AIWhaleEditorAPI)
           })
-        """)
-        print("SETTINGS_WEBKIT_DIAGNOSTIC \(diagnostic)")
-        XCTAssertEqual(result["editor"] as? Bool, true)
-        XCTAssertEqual(result["mask"] as? Bool, true)
-        XCTAssertEqual(result["rootHidden"] as? Bool, true)
-        XCTAssertEqual(result["iframe"] as? Bool, false)
+        """) as? [String: Any] ?? [:]
+        XCTAssertEqual(bubbles["preview"] as? Bool, true)
+        XCTAssertEqual(bubbles["iframe"] as? Bool, false)
+        XCTAssertEqual(bubbles["mount"] as? Bool, false)
+        XCTAssertEqual(bubbles["editor"] as? Bool, false)
+
+        _ = try await evaluate(webView, "document.querySelector(\"#nav button[data-page='accounts']\").click()")
+        try await Task.sleep(nanoseconds: 80_000_000)
+        let accounts = try await evaluate(webView, "Boolean(document.querySelector('[data-acc], #accountCards') && document.body.innerText.indexOf('Codex') >= 0)")
+        XCTAssertEqual(accounts as? Bool, true)
     }
 
     func testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback() async throws {
@@ -168,6 +169,14 @@ final class WidgetWebViewTests: XCTestCase {
         webView.loadFileURL(html, allowingReadAccessTo: resourceRoot)
         await fulfillment(of: [loaded], timeout: 10)
         try await waitForJavaScript(webView)
+        _ = try await evaluate(webView, """
+          window.__AIWhale.update({
+            showMenuButton: true,
+            accounts: [{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38}]}],
+            bubbleSteps: [{id:'step-dash',modules:[{type:'dashboard'}]}],
+            bubbleRevision: 'test-1'
+          })
+        """)
 
         for scale in [0.65, 1.0, 1.6] {
             _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:\(scale), height:\(184 * scale)})")

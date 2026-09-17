@@ -2,11 +2,13 @@ import Cocoa
 import WebKit
 import ServiceManagement
 import UniformTypeIdentifiers
+import CodexCore
 
 final class SettingsWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate {
     var onAppearanceChanged: (() -> Void)?
     var onConnectionChanged: (() -> Void)?
     var onTestConnection: ((String, String) -> Void)?
+    var onRefreshAccounts: ((String?) -> Void)?
     var onResetLayout: (() -> Void)?
     var connectionState: (() -> ProviderState)?
 
@@ -140,7 +142,26 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             guard let reference = body["reference"] as? String,
                   let value = body["value"] as? String else { return }
             _ = WhaleConfigurationStore.shared.saveCredential(reference: reference, value: value)
+            if let accountID = body["accountId"] as? String, !accountID.isEmpty {
+                WhaleConfigurationStore.shared.updateAccount(id: accountID, patch: ["authMode": "token"])
+            }
             sendPayload()
+        case "refreshAccounts":
+            onRefreshAccounts?(body["accountId"] as? String)
+        case "addAccount":
+            guard let provider = body["provider"] as? String else { return }
+            var accounts = WhaleConfigurationStore.shared.accounts()
+            accounts.append(AccountCatalog.makeAccount(provider: provider))
+            WhaleConfigurationStore.shared.replaceAccounts(accounts)
+            sendPayload()
+            onAppearanceChanged?()
+        case "removeAccount":
+            guard let id = body["id"] as? String, !["codex", "grok", "cursor", "deepseek"].contains(id) else { return }
+            var accounts = WhaleConfigurationStore.shared.accounts()
+            accounts.removeAll { ($0["id"] as? String) == id }
+            WhaleConfigurationStore.shared.replaceAccounts(accounts)
+            sendPayload()
+            onAppearanceChanged?()
         case "importResource":
             guard let kind = body["kind"] as? String,
                   let name = body["name"] as? String,
@@ -197,13 +218,17 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             if let value = appearance["snapEnabled"] as? NSNumber { preferences.snapEnabled = value.boolValue }
             if let value = appearance["showMenuButton"] as? NSNumber { preferences.showMenuButton = value.boolValue }
         }
+        if let reminders = config["reminders"] as? [String: Any],
+           let value = reminders["closeAfterSeconds"] as? NSNumber {
+            preferences.bubbleCloseAfterSeconds = value.intValue
+        }
         if let bubble = config["bubble"] as? [String: Any],
            let value = bubble["closeAfterSeconds"] as? NSNumber {
             preferences.bubbleCloseAfterSeconds = value.intValue
         }
-        if let sound = config["sound"] as? [String: Any],
-           let value = sound["enabled"] as? NSNumber {
-            preferences.soundEnabled = value.boolValue
+        if let sound = config["sound"] as? [String: Any] {
+            if let value = sound["enabled"] as? NSNumber { preferences.soundEnabled = value.boolValue }
+            if let value = sound["volume"] as? NSNumber { /* persisted in configuration.json */ _ = value }
         }
     }
 
@@ -222,8 +247,12 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
     private func sendPayload() {
         guard ready else { return }
         let connection = connectionPayload()
+        var config = WhaleConfigurationStore.shared.snapshot()
+        config["accounts"] = WhaleConfigurationStore.shared.publicAccounts()
         let payload: [String: Any] = [
-            "config": WhaleConfigurationStore.shared.snapshot(),
+            "config": config,
+            "accounts": config["accounts"] as? [[String: Any]] ?? [],
+            "providerMeta": AccountCatalog.providerMeta,
             "templates": ProviderTemplates.all,
             "resources": WhaleConfigurationStore.shared.allResources(),
             "app": [
