@@ -8,8 +8,11 @@
 :root { color-scheme: light; --ai-scale: 1; --ai-content-height: 184; background: transparent; }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 html .dshwv-root { position: absolute !important; left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important; width: calc(248px * var(--ai-scale)) !important; height: calc(var(--ai-content-height) * 1px * var(--ai-scale)) !important; --dshw-base: calc(248px * var(--ai-scale)) !important; transform: none !important; transition: none !important; overflow: visible !important; }
-html .dshwv-body { width: 100% !important; height: 100% !important; }
-html .dshwv-img { right: auto !important; left: 12.9% !important; bottom: 0 !important; width: 74.2% !important; height: 94.6% !important; object-fit: contain !important; object-position: center bottom !important; }
+html .dshwv-body { width: 100% !important; height: 100% !important; position: relative !important; }
+/* The character belongs to its own fixed bottom region.  Never derive its
+   height from the expanded bubble viewport, otherwise opening a bubble grows
+   the image into the speech content. */
+html .dshwv-img { right: auto !important; left: calc(32px * var(--ai-scale)) !important; bottom: 0 !important; width: calc(184px * var(--ai-scale)) !important; height: calc(174px * var(--ai-scale)) !important; object-fit: contain !important; object-position: center bottom !important; }
 html .dshwv-pop { left: .8% !important; top: 0 !important; width: 98.4% !important; height: auto !important; }
 html .dshwv-menu { max-height: 86vh; overflow-y: auto; }
 html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
@@ -122,7 +125,11 @@ html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
       var signature = [visible, rr.width, rr.height, wr.x, wr.y, wr.width, wr.height, br.x, br.y, br.width, br.height].map(function (x) { return Number(x).toFixed(2) }).join("/");
       if (signature === lastLayoutSignature) return;
       lastLayoutSignature = signature;
-      post("bubbleLayout", { embedded: true, visible: visible, height: 184, innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height });
+      var scale = Number(getComputedStyle(document.documentElement).getPropertyValue("--ai-scale"));
+      if (!isFinite(scale) || scale <= 0) scale = 1;
+      // Native layout works in unscaled CSS points; report the actual SVG
+      // bubble height rather than the old compact sentinel height.
+      post("bubbleLayout", { embedded: false, visible: visible, height: Math.ceil(br.height / scale), innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height });
     });
   }
   window.__AIWhaleHostDataUpdated = function () { var s = window.__AIWhaleState || {}; var image = document.querySelector(".dshwv-img"); if (image && s.roleImage && image.getAttribute("src") !== s.roleImage) image.src = s.roleImage; var root = document.querySelector(".dshwv-root"); if (root) root.classList.toggle("dshwv-left", !!s.flip); window.dispatchEvent(new Event("aiwhale-data")); reportLayout(); }

@@ -25,8 +25,11 @@ final class WhaleHostAdapter {
             if verb == "POST" || verb == "PUT" {
                 let next = bodyObject(body)
                 guard !next.isEmpty else { return (400, ["ok": false, "error": "泡泡配置为空"]) }
-                WhaleConfigurationStore.shared.savePatch(["upstreamBubble": next])
-                return (200, ["ok": true, "config": next])
+                guard let saved = WhaleConfigurationStore.shared.saveUpstreamBubble(next) else {
+                    return (400, ["ok": false, "error": "泡泡配置无法保存"])
+                }
+                owner?.bubbleConfigurationDidChange(saved.configuration)
+                return (200, ["ok": true, "config": saved.configuration, "revision": saved.revision])
             }
         case "/dsh-whale/api-models.json":
             if verb == "GET" { return (200, apiModelsPayload()) }

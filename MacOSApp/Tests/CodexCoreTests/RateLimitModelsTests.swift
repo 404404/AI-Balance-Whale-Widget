@@ -94,4 +94,41 @@ final class RateLimitModelsTests: XCTestCase {
         XCTAssertFalse(queue.visible)
         XCTAssertEqual(queue.index, 0)
     }
+
+    func testWhamUsageParsesPrimarySecondaryAndAdditionalBuckets() {
+        let parsed = WhamUsageParser.parse([
+            "plan_type": "pro",
+            "rate_limit": [
+                "primary_window": ["used_percent": 0, "limit_window_seconds": 18_000, "reset_at": 1_730_000_000],
+                "secondary_window": ["used_percent": 100, "limit_window_seconds": 604_800, "reset_at": 1_730_100_000],
+            ],
+            "additional_rate_limits": [[
+                "limit_name": "额外 Codex 池",
+                "metered_feature": "codex_extra",
+                "rate_limit": ["primary_window": ["used_percent": 37.5, "limit_window_seconds": 900, "reset_at": 1_730_000_900]],
+            ]],
+        ])
+        XCTAssertEqual(parsed.planType, "pro")
+        XCTAssertEqual(parsed.buckets.count, 3)
+        XCTAssertEqual(parsed.buckets.first(where: { $0.id == "codex" && $0.window == .primary })?.remainingPercent, 100)
+        XCTAssertEqual(parsed.buckets.first(where: { $0.id == "codex" && $0.window == .secondary })?.remainingPercent, 0)
+        let extra = try! XCTUnwrap(parsed.buckets.first(where: { $0.id == "codex_extra" }))
+        XCTAssertEqual(extra.name, "额外 Codex 池")
+        XCTAssertEqual(extra.windowDurationMinutes, 15)
+    }
+
+    func testWhamUsageKeepsUnknownValuesUnknown() {
+        let parsed = WhamUsageParser.parse([
+            "rate_limit": [
+                "primary_window": ["used_percent": 101, "limit_window_seconds": "bad", "reset_at": 9_999_999_999],
+                "secondary_window": NSNull(),
+            ],
+            "additional_rate_limits": [["metered_feature": "empty", "rate_limit": NSNull()]],
+        ])
+        let bucket = try! XCTUnwrap(parsed.buckets.first)
+        XCTAssertNil(bucket.usedPercent)
+        XCTAssertNil(bucket.remainingPercent)
+        XCTAssertNil(bucket.windowDurationMinutes)
+        XCTAssertNil(bucket.resetsAt)
+    }
 }
