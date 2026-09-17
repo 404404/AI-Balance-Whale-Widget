@@ -3,7 +3,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROJECT="$ROOT/MacOSApp"
-APP_VERSION="${APP_VERSION:-0.1.0-beta.10}"
+SOURCE_PLIST="$PROJECT/Resources/Info.plist"
+SOURCE_TAG="$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$SOURCE_PLIST")"
+SOURCE_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SOURCE_PLIST")"
+if [[ "$SOURCE_SHORT" != "${SOURCE_TAG%%-*}" ]]; then
+  echo "Info.plist version mismatch: CFBundleShortVersionString=$SOURCE_SHORT AIAppReleaseTag=$SOURCE_TAG" >&2
+  exit 2
+fi
+APP_VERSION="${APP_VERSION:-$SOURCE_TAG}"
 BUILD_NUMBER="${BUILD_NUMBER:-2}"
 DIST="$PROJECT/dist"
 APP="$DIST/AI Balance Whale.app"
@@ -56,15 +63,8 @@ else
   [[ "$SIGNING_MODE" == "ad-hoc" ]] || { echo "unknown SIGNING_MODE: $SIGNING_MODE" >&2; exit 3; }
   codesign --force --deep --sign - --timestamp=none "$APP"
 fi
-codesign --verify --deep --strict --verbose=2 "$APP"
+bash "$PROJECT/scripts/verify-app.sh" "$APP"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "$MARKETING_VERSION"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" = "$BUILD_NUMBER"
-test -f "$APP/Contents/Resources/WhaleWidget.html"
-test -f "$APP/Contents/Resources/Settings.html"
-test -f "$APP/Contents/Resources/AppIcon.icns"
-test -f "$APP/Contents/Resources/DSniang1.png"
-test -f "$APP/Contents/Resources/Ya1.mp3"
-test -f "$APP/Contents/Resources/AppIcon.icns"
-test -f "$APP/Contents/Resources/task-end-a.wav"
-lipo -archs "$APP/Contents/MacOS/AIBalanceWhale" | grep -Eq '(^| )arm64( |$)'
+test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "$APP_VERSION"
 echo "Built $APP ($APP_VERSION, build $BUILD_NUMBER, $SIGNING_MODE)"
