@@ -28,17 +28,11 @@ jobs:
     runs-on: macos-14
     permissions:
       contents: write
+      actions: read
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       INPUT_VERSION: ${{ inputs.version }}
       INPUT_TAG: ${{ inputs.tag }}
       INPUT_PRERELEASE: ${{ inputs.prerelease }}
-      SIGNING_IDENTITY_SECRET: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-      CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-      CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-      APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
-      APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,6 +40,8 @@ jobs:
           ref: ${{ github.sha }}
       - name: Resolve and validate release identity
         id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
@@ -85,6 +81,13 @@ jobs:
           swift --version
           test "$(uname -m)" = "arm64"
       - name: Configure signing mode
+        env:
+          SIGNING_IDENTITY_SECRET: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
           if [[ -n "$SIGNING_IDENTITY_SECRET" ]]; then
@@ -105,9 +108,29 @@ jobs:
             echo "SIGNING_MODE=ad-hoc" >> "$GITHUB_ENV"
             echo 'No Developer ID secrets configured; using ad-hoc signing.'
           fi
+      - name: Detect prior successful macOS CI for this SHA
+        id: prior_ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SKIP_QUALITY_GATE=false
+          RUN_ID=""
+          if RUNS="$(gh run list --workflow macos-ci.yml --commit "$GITHUB_SHA" --json databaseId,headSha,conclusion,event --limit 30)"; then
+            RUN_ID="$(printf '%s\n' "$RUNS" | jq -r --arg sha "$GITHUB_SHA" '[.[] | select(.conclusion == "success" and .event == "push" and .headSha == $sha) | .databaseId][0] // empty')"
+          fi
+          if [[ -n "$RUN_ID" ]]; then
+            SKIP_QUALITY_GATE=true
+            echo "SHA $GITHUB_SHA already passed macOS CI on push (run $RUN_ID); skipping fixture, source, and packaged WebKit tests."
+          else
+            echo "No successful push macOS CI found for $GITHUB_SHA; running the full quality gate before packaging."
+          fi
+          echo "skip_quality_gate=$SKIP_QUALITY_GATE" >> "$GITHUB_OUTPUT"
       - name: Run fixture tests
-        run: swift test --package-path MacOSApp
+        if: steps.prior_ci.outputs.skip_quality_gate != 'true'
+        run: swift test --package-path MacOSApp --skip WidgetWebViewTests
       - name: Regression source checks
+        if: steps.prior_ci.outputs.skip_quality_gate != 'true'
         run: bash MacOSApp/scripts/verify-source.sh
       - name: Build App bundle
         env:
@@ -115,6 +138,7 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: MacOSApp/scripts/build.sh
       - name: Run packaged WKWebView geometry tests
+        if: steps.prior_ci.outputs.skip_quality_gate != 'true'
         env:
           WHALE_WIDGET_RESOURCE_ROOT: ${{ github.workspace }}/MacOSApp/dist/AI Balance Whale.app/Contents/Resources
         run: swift test --package-path MacOSApp --filter WidgetWebViewTests
@@ -144,16 +168,13 @@ jobs:
           DMG="MacOSApp/dist/AI-Balance-Whale-macos-${{ steps.release.outputs.version }}-arm64.dmg"
           test "$(git rev-parse HEAD)" = "${{ steps.release.outputs.source_sha }}"
           test -f "$DMG" && test -f MacOSApp/dist/SHA256SUMS
-          test -f "$APP/Contents/Resources/Settings.html"
-          test -f "$APP/Contents/Resources/AppIcon.icns"
+          bash MacOSApp/scripts/verify-app.sh "$APP"
           test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "${{ steps.release.outputs.version }}"
           mkdir -p "$RUNNER_TEMP/ai-balance-whale-verify"
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/ai-balance-whale-verify" "$DMG" >/dev/null
           test -d "$RUNNER_TEMP/ai-balance-whale-verify/AI Balance Whale.app"
           test -e "$RUNNER_TEMP/ai-balance-whale-verify/Applications"
           hdiutil detach "$RUNNER_TEMP/ai-balance-whale-verify" >/dev/null
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          lipo -archs "$APP/Contents/MacOS/AIBalanceWhale" | grep -Eq '(^| )arm64( |$)'
       - name: Write release notes
         run: |
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
@@ -170,6 +191,7 @@ jobs:
           EOF
       - name: Create draft release, upload assets, then publish
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.release.outputs.version }}
           TAG_NAME: ${{ steps.release.outputs.tag }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}

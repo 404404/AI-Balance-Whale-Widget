@@ -4,7 +4,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROJECT="$ROOT/MacOSApp"
 APP="$PROJECT/dist/AI Balance Whale.app"
-APP_VERSION="${APP_VERSION:-0.1.0-beta.10}"
+test -d "$APP"
+APP_VERSION="${APP_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")}"
+if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "invalid APP_VERSION: $APP_VERSION" >&2
+  exit 2
+fi
 DMG_NAME="${DMG_NAME:-AI-Balance-Whale-macos-${APP_VERSION}-arm64.dmg}"
 DMG="$PROJECT/dist/$DMG_NAME"
 STAGING="$(mktemp -d "${TMPDIR:-/tmp}/ai-balance-whale-dmg.XXXXXX")"
@@ -16,7 +21,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-test -d "$APP"
 cp -R "$APP" "$STAGING/AI Balance Whale.app"
 ln -s /Applications "$STAGING/Applications"
 rm -f "$DMG"

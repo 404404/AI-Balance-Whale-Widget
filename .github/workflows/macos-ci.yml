@@ -2,9 +2,19 @@ name: macOS CI
 
 on:
   push:
-    branches: [main, 'feature/**', 'fix/**']
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**/*.md'
+      - 'LICENSE'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**/*.md'
+      - 'LICENSE'
 
 permissions:
   contents: read
@@ -28,12 +38,14 @@ jobs:
           swift --version
           test "$(uname -m)" = "arm64"
       - name: Run Codex protocol fixture tests
-        run: swift test --package-path MacOSApp
+        # WidgetWebViewTests already exercise source assets when
+        # WHALE_WIDGET_RESOURCE_ROOT is unset. Skip that pass here and keep
+        # packaged-app coverage after the ad-hoc bundle is built.
+        run: swift test --package-path MacOSApp --skip WidgetWebViewTests
       - name: Regression source checks
         run: bash MacOSApp/scripts/verify-source.sh
       - name: Build ad-hoc arm64 App
         env:
-          APP_VERSION: 0.1.0-beta.10
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_MODE: ad-hoc
         run: MacOSApp/scripts/build.sh
@@ -43,13 +55,14 @@ jobs:
         run: swift test --package-path MacOSApp --filter WidgetWebViewTests
       - name: Verify App bundle
         run: |
+          set -euo pipefail
           APP="MacOSApp/dist/AI Balance Whale.app"
-          test -d "$APP"
-          test -f "$APP/Contents/Resources/WhaleWidget.html"
-          test -f "$APP/Contents/Resources/Settings.html"
-          test -f "$APP/Contents/Resources/AppIcon.icns"
-          test -f "$APP/Contents/Resources/DSniang1.png"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" = "0.1.0"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")" = "AppIcon"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          lipo -archs "$APP/Contents/MacOS/AIBalanceWhale" | grep -Eq '(^| )arm64( |$)'
+          SOURCE="MacOSApp/Resources/Info.plist"
+          bash MacOSApp/scripts/verify-app.sh "$APP"
+          SOURCE_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SOURCE")"
+          SOURCE_TAG="$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$SOURCE")"
+          BUILT_SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          BUILT_TAG="$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")"
+          test "$SOURCE_SHORT" = "${SOURCE_TAG%%-*}"
+          test "$BUILT_SHORT" = "$SOURCE_SHORT"
+          test "$BUILT_TAG" = "$SOURCE_TAG"
