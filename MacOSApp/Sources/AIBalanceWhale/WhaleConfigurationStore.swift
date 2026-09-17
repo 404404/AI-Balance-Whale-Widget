@@ -27,8 +27,10 @@ final class WhaleConfigurationStore {
     func save(_ incoming: [String: Any]) {
         queue.sync {
             var next = Self.defaultObject()
+            Self.merge(&next, object)
             Self.merge(&next, incoming)
-            next["schemaVersion"] = 2
+            Self.migrateBubble(&next)
+            next["schemaVersion"] = 3
             object = next
             write(next, to: configurationURL)
         }
@@ -38,6 +40,22 @@ final class WhaleConfigurationStore {
         var next = snapshot()
         Self.merge(&next, patch)
         save(next)
+    }
+
+    func saveUpstreamBubble(_ raw: [String: Any]) -> (configuration: [String: Any], revision: Int)? {
+        guard !raw.isEmpty else { return nil }
+        return queue.sync {
+            var next = object
+            var canonical = raw
+            let revision = ((next["bubbleRevision"] as? NSNumber)?.intValue ?? 0) + 1
+            canonical["revision"] = revision
+            next["upstreamBubble"] = canonical
+            next["bubbleRevision"] = revision
+            next["schemaVersion"] = 3
+            object = next
+            write(next, to: configurationURL)
+            return (canonical, revision)
+        }
     }
 
     func resetLayout() {
@@ -151,8 +169,17 @@ final class WhaleConfigurationStore {
             return defaults
         }
         var merged = Self.defaultObject()
+        // A schema-2 installation has no canonical upstreamBubble. Do not
+        // let the schema-3 default mask its legacy bubble before migration.
+        if loaded["upstreamBubble"] == nil {
+            merged.removeValue(forKey: "upstreamBubble")
+        }
         Self.merge(&merged, loaded)
-        if (loaded["schemaVersion"] as? Int ?? 1) < 2 { write(merged, to: configurationURL) }
+        Self.migrateBubble(&merged)
+        if (loaded["schemaVersion"] as? Int ?? 1) < 3 {
+            merged["schemaVersion"] = 3
+            write(merged, to: configurationURL)
+        }
         return merged
     }
 
@@ -202,15 +229,44 @@ final class WhaleConfigurationStore {
 
     private static func defaultObject() -> [String: Any] {
         [
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "layout": ["scale": 1.0, "alwaysOnTop": false, "allSpaces": false, "mousePassthrough": false, "launchAtLogin": false],
             "appearance": ["snapEnabled": true, "showMenuButton": true, "bubbleEnabled": true, "flip": false, "roleId": "builtin-dsniang"],
             "sound": ["enabled": true, "volume": 0.45, "set": "duck", "press": "Ya1.mp3", "release": "Ya2.mp3", "taskEnd": "end_a"],
             "bubble": ["closeAfterSeconds": 0, "advanceOnClick": true, "firstAction": "show", "againAction": "toggle", "library": [], "steps": [["kind": "status", "text": "Codex 订阅额度"]]],
+            "upstreamBubble": ["v": 1, "items": [], "lib": [], "tapAdvance": false],
+            "bubbleRevision": 0,
             "providers": ProviderTemplates.all.filter { (($0["id"] as? String) == "deepseek") || (($0["id"] as? String) == "codex") },
             "reminders": ["enabled": false, "threshold": 20, "budget": NSNull()],
             "records": ["source": "未连接事件来源", "items": []],
             "resources": ["roles": [["id": "builtin-dsniang", "name": "DS娘（默认）", "relativePath": "DSniang1.png", "mime": "image/png", "builtin": true]], "bubbles": [["id": "builtin-money", "name": "金币", "relativePath": "bubble-money1.gif", "mime": "image/gif", "builtin": true], ["id": "builtin-petpet", "name": "Petpet", "relativePath": "bubble-petpet.gif", "mime": "image/gif", "builtin": true]], "audio": [["id": "builtin-press", "name": "按下", "relativePath": "Ya1.mp3", "mime": "audio/mpeg", "builtin": true], ["id": "builtin-release", "name": "松开", "relativePath": "Ya2.mp3", "mime": "audio/mpeg", "builtin": true]],
         ]]
+    }
+
+    private static func migrateBubble(_ configuration: inout [String: Any]) {
+        if let upstream = configuration["upstreamBubble"] as? [String: Any], upstream["v"] != nil { return }
+        let legacy = configuration["bubble"] as? [String: Any] ?? [:]
+        let steps = legacy["steps"] as? [[String: Any]] ?? []
+        var modules: [[String: Any]] = []
+        for step in steps {
+            let kind = step["kind"] as? String ?? "text"
+            switch kind {
+            case "status", "dynamic":
+                modules.append(["type": "plan", "modelId": "codex", "size": step["fontSize"] ?? 8, "tpl": step["text"] as? String ?? "额度 {plan_left}"])
+            case "image", "gif":
+                modules.append(["type": "image", "imgId": step["resourceId"] as? String ?? "bimg_petpet", "size": step["fontSize"] ?? 6])
+            case "link":
+                modules.append(["type": "link", "text": step["text"] as? String ?? "打开链接", "url": step["url"] as? String ?? "", "size": step["fontSize"] ?? 8])
+            default:
+                modules.append(["type": "text", "text": step["text"] as? String ?? "", "size": step["fontSize"] ?? 8, "color": step["color"] as? String ?? ""])
+            }
+        }
+        configuration["upstreamBubble"] = [
+            "v": 1,
+            "items": modules.isEmpty ? [] : [["kind": "custom", "modules": modules]],
+            "lib": [],
+            "tapAdvance": (legacy["advanceOnClick"] as? NSNumber)?.boolValue ?? false,
+        ]
+        if configuration["bubbleRevision"] == nil { configuration["bubbleRevision"] = 0 }
     }
 }

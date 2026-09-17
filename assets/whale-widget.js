@@ -10111,6 +10111,24 @@ var state = {
 function applyStandaloneNativeState() {
   if (!window.__AIWhaleStandalone) return
   var incoming = window.__AIWhaleState || {}
+  // Desktop and settings share this canonical configuration. A quota refresh
+  // carries the same revision, so it never advances a queue by itself.
+  var incomingBubble = incoming.upstreamBubble
+  if (incomingBubble && typeof incomingBubble === 'object') {
+    var nextRevision = String(incomingBubble.revision == null ? JSON.stringify(incomingBubble) : incomingBubble.revision)
+    if (window.__AIWhaleAppliedBubbleRevision !== nextRevision) {
+      window.__AIWhaleAppliedBubbleRevision = nextRevision
+      bubbleCfg = JSON.parse(JSON.stringify(incomingBubble))
+      bubbleLib = Array.isArray(bubbleCfg.lib) ? JSON.parse(JSON.stringify(bubbleCfg.lib)) : []
+      bubbleTapAdvance = bubbleCfg.tapAdvance === true
+      applyBubbleCfgSeq()
+      if (bubbleShown && bubbleScene && bubbleScene.kind === 'custom') {
+        bubbleSeqIdx = 0
+        bubbleRoundOn = true
+        bubbleShowSeqNext()
+      }
+    }
+  }
   var buckets = Array.isArray(incoming.buckets) ? incoming.buckets : []
   var valid = null
   for (var i = 0; i < buckets.length; i++) {
@@ -10427,6 +10445,7 @@ function loadBubbleCfg() {
       .then(function (d) {
         if (d && d.ok && d.config) {
           bubbleCfg = d.config
+          window.__AIWhaleAppliedBubbleRevision = String(d.config.revision == null ? JSON.stringify(d.config) : d.config.revision)
           bubbleLib = (d.config.lib && Array.isArray(d.config.lib)) ? JSON.parse(JSON.stringify(d.config.lib)) : []
           bubbleTapAdvance = d.config.tapAdvance === true // v727
           applyBubbleCfgSeq()
@@ -10448,6 +10467,7 @@ function saveBubbleCfg(cfg, okFn) {
       .then(function (d) {
         if (d && d.ok && d.config) {
           bubbleCfg = d.config
+          window.__AIWhaleAppliedBubbleRevision = String(d.config.revision == null ? JSON.stringify(d.config) : d.config.revision)
           applyBubbleCfgSeq()
           if (okFn) okFn()
         } else if (okFn) okFn(false)

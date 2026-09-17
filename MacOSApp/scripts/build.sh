@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROJECT="$ROOT/MacOSApp"
-APP_VERSION="${APP_VERSION:-0.1.0-beta.8}"
+APP_VERSION="${APP_VERSION:-0.1.0-beta.10}"
 BUILD_NUMBER="${BUILD_NUMBER:-2}"
 DIST="$PROJECT/dist"
 APP="$DIST/AI Balance Whale.app"

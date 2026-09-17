@@ -2,7 +2,7 @@ import Cocoa
 import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let provider = CodexAppServerClient()
+    private let provider = CodexHTTPUsageClient()
     private let externalProvider = ExternalProviderClient()
     private var whaleWindow: WhaleWindowController!
     private var settingsWindow: SettingsWindowController?

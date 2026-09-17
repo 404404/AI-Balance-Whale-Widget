@@ -43,7 +43,7 @@ private struct NativeDragSession {
 }
 
 final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate {
-    let provider: CodexAppServerClient
+    let provider: CodexHTTPUsageClient
     private let panel: WhalePanel
     private let webView: WKWebView
 
@@ -68,9 +68,13 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private var nativeDragSession: NativeDragSession?
     private var lastSentLayoutKey: String?
     private lazy var hostAdapter = WhaleHostAdapter(owner: self)
-    private let usesEmbeddedUpstreamBubble = true
+    private lazy var contextMenu = NativeContextMenuController()
+    // The upstream bubble is rendered inside the widget WebView, but its
+    // measured height participates in the native frame.  It is not an
+    // "embedded compact" overlay: opening it grows the frame upward.
+    private let usesEmbeddedUpstreamBubble = false
 
-    init(provider: CodexAppServerClient) {
+    init(provider: CodexHTTPUsageClient) {
         self.provider = provider
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
@@ -102,6 +106,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         panel.onRightMouseDown = { [weak self] event in self?.handleNativeRightMouseDown(event) ?? false }
         contentController.add(self, name: "bridge")
         webView.navigationDelegate = self
+        contextMenu.onAction = { [weak self] action in self?.performContextMenuAction(action) }
         restoreFrame()
         applyPreferences()
     }
@@ -192,6 +197,14 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     }
 
     func refresh() { provider.refresh() }
+
+    func bubbleConfigurationDidChange(_ configuration: [String: Any]) {
+        // The same canonical upstreamBubble object is sent to the desktop
+        // renderer and is persisted by WhaleConfigurationStore. It never falls
+        // back to the legacy simplified bubble field after a successful save.
+        renderCurrentState()
+        recordDebug("bubble configuration applied")
+    }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "bridge",
@@ -298,7 +311,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let configuration = WhaleConfigurationStore.shared.snapshot()
         let appearance = configuration["appearance"] as? [String: Any] ?? [:]
         let sound = configuration["sound"] as? [String: Any] ?? [:]
-        let bubble = normalizedBubble(configuration["bubble"] as? [String: Any] ?? [:])
+        let bubble = normalizedBubble(configuration["upstreamBubble"] as? [String: Any] ?? [:])
         let roleID = appearance["roleId"] as? String
         let roleImage = roleID.flatMap {
             WhaleConfigurationStore.shared.resourceDataURL(kind: "roles", id: $0)
@@ -323,8 +336,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             "soundVolume": sound["volume"] ?? 0.45,
             "pressSound": pressSound,
             "releaseSound": releaseSound,
-            "bubble": bubble,
-            "bubbleSteps": bubble["steps"] ?? [],
+            "upstreamBubble": bubble,
             "vendors": externalBalances
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object),
@@ -581,9 +593,29 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
     private func handleNativeRightMouseDown(_ event: NSEvent) -> Bool {
         guard !AppPreferences.shared.mousePassthrough,
               let point = localDOMPoint(for: event), isWhalePoint(point) else { return false }
-        evaluate("window.__AIWhale && window.__AIWhale.nativeContextMenu && window.__AIWhale.nativeContextMenu()")
-        recordDebug("native context menu")
+        let screenPoint = panel.convertPoint(toScreen: event.locationInWindow)
+        contextMenu.show(at: screenPoint, preferredScreen: screenForPanel(panel))
+        recordDebug("native context menu opened")
         return true
+    }
+
+    private func performContextMenuAction(_ action: NativeContextMenuController.Action) {
+        switch action {
+        case .toggleBubble:
+            evaluate("window.__AIWhale && window.__AIWhale.toggleBubble()")
+        case .refresh:
+            provider.refresh()
+        case .settingsBubble:
+            openSettings(page: "bubbles")
+        case .settingsResources:
+            openSettings(page: "resources")
+        case .settingsSound:
+            openSettings(page: "sounds")
+        case .settingsUsage:
+            openSettings(page: "reminders")
+        case .restoreDisplay:
+            restoreDisplay()
+        }
     }
 
     private func localDOMPoint(for event: NSEvent) -> NSPoint? {

@@ -283,6 +283,8 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
         result["message"] = status?.message ?? (resolvedPath == nil ? "未找到可执行的 codex" : "已找到 codex，等待测试连接")
         result["status"] = status?.status.rawValue ?? "idle"
         if let email = status?.email { result["account"] = email }
+        if let source = status?.authSource { result["authSource"] = source }
+        if let accountID = status?.accountKey { result["accountID"] = accountID }
         if let version = status?.cliVersion { result["version"] = version }
         else if let resolvedPath, let version = cliVersionCache[resolvedPath] { result["version"] = version }
         return result

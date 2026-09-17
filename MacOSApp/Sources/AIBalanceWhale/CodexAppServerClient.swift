@@ -13,6 +13,7 @@ struct ProviderState {
     var lastUpdated: Date?
     var cliPath: String?
     var cliVersion: String?
+    var authSource: String?
 }
 
 private struct CachedSnapshot: Codable {

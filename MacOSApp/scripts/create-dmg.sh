@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROJECT="$ROOT/MacOSApp"
 APP="$PROJECT/dist/AI Balance Whale.app"
-APP_VERSION="${APP_VERSION:-0.1.0-beta.8}"
+APP_VERSION="${APP_VERSION:-0.1.0-beta.10}"
 DMG_NAME="${DMG_NAME:-AI-Balance-Whale-macos-${APP_VERSION}-arm64.dmg}"
 DMG="$PROJECT/dist/$DMG_NAME"
 STAGING="$(mktemp -d "${TMPDIR:-/tmp}/ai-balance-whale-dmg.XXXXXX")"
