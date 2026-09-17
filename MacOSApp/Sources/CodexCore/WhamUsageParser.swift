@@ -29,9 +29,10 @@ public enum WhamUsageParser {
         }
 
         var seen = Set<String>()
-        let unique = buckets.filter { bucket in
+        let unique: [RateLimitBucket] = buckets.filter { bucket in
             let reset = bucket.resetsAt.map { String(Int($0.timeIntervalSince1970)) } ?? "unknown"
-            let key = "\(bucket.id)|\(bucket.window.rawValue)|\(bucket.usedPercent.map(String.init) ?? "unknown")|\(reset)"
+            let used = bucket.usedPercent.map { String($0) } ?? "unknown"
+            let key = "\(bucket.id)|\(bucket.window.rawValue)|\(used)|\(reset)"
             return seen.insert(key).inserted
         }
         return ParsedRateLimits(buckets: unique, planType: plan, parsedAt: now)
