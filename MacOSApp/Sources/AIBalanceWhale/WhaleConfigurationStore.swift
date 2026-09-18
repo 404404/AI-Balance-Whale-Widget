@@ -33,22 +33,37 @@ final class WhaleConfigurationStore {
         ((snapshot()["bubble"] as? [String: Any])?["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
     }
 
-    func save(_ incoming: [String: Any]) {
+    @discardableResult
+    func save(_ incoming: [String: Any]) -> Bool {
         queue.sync {
             var next = Self.defaultObject()
             Self.merge(&next, object)
             Self.merge(&next, incoming)
             next = AccountCatalog.migrate(next)
             next["accounts"] = ((next["accounts"] as? [[String: Any]]) ?? []).map(AccountCatalog.stripSecret)
+            guard write(next, to: configurationURL) else { return false }
             object = next
-            write(next, to: configurationURL)
+            return true
         }
     }
 
-    func savePatch(_ patch: [String: Any]) {
+    @discardableResult
+    func savePatch(_ patch: [String: Any]) -> Bool {
         var next = snapshot()
         Self.merge(&next, patch)
-        save(next)
+        // A legacy/simple editor update is a deliberate replacement of the
+        // upstream item list. Do not leave an older canonical `items` array
+        // shadowing the newly saved steps. Full editor writes include items
+        // and therefore take the other branch without losing them.
+        if let patchBubble = patch["bubble"] as? [String: Any],
+           patchBubble["steps"] != nil, patchBubble["items"] == nil,
+           var mergedBubble = next["bubble"] as? [String: Any] {
+            mergedBubble.removeValue(forKey: "items")
+            mergedBubble.removeValue(forKey: "lib")
+            mergedBubble.removeValue(forKey: "tapAdvance")
+            next["bubble"] = mergedBubble
+        }
+        return save(next)
     }
 
     func replaceAccounts(_ accounts: [[String: Any]]) {
@@ -198,10 +213,16 @@ final class WhaleConfigurationStore {
         return merged
     }
 
-    private func write(_ value: [String: Any], to url: URL) {
-        try? fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else { return }
-        try? data.write(to: url, options: .atomic)
+    @discardableResult
+    private func write(_ value: [String: Any], to url: URL) -> Bool {
+        do {
+            try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else { return false }
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func resources(kind: String) -> [[String: Any]] {
@@ -255,6 +276,7 @@ final class WhaleConfigurationStore {
                 "againAction": "toggle",
                 "steps": AccountCatalog.defaultBubbleSteps(),
             ],
+            "bubbleCustomized": false,
             "accounts": AccountCatalog.defaultAccounts(),
             "reminders": ["enabled": true, "threshold": 15, "budget": NSNull()],
             "records": ["source": "未连接事件来源", "items": []],

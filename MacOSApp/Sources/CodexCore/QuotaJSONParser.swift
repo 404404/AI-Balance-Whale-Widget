@@ -83,7 +83,9 @@ public enum QuotaJSONParser {
     }
 
     public static func parseKimi(_ object: Any) -> QuotaFetchSnapshot {
-        let remain = number(at: "current_remaining_percent", in: object) ?? 0
+        guard let remain = validPercent(number(at: "current_remaining_percent", in: object)) else {
+            return QuotaFetchSnapshot(ok: false, message: "Kimi 额度字段无法解析")
+        }
         return QuotaFetchSnapshot(
             ok: true, message: "Kimi 已更新",
             windows: [QuotaWindowSnapshot(id: "plan", label: "套餐", remainPct: remain, usedPct: 100 - remain, resetAt: nil)]
@@ -91,7 +93,9 @@ public enum QuotaJSONParser {
     }
 
     public static func parseMiniMax(_ object: Any) -> QuotaFetchSnapshot {
-        let remain = number(at: "model_remains.0.current_interval_remaining_percent", in: object) ?? 0
+        guard let remain = validPercent(number(at: "model_remains.0.current_interval_remaining_percent", in: object)) else {
+            return QuotaFetchSnapshot(ok: false, message: "MiniMax 额度字段无法解析")
+        }
         return QuotaFetchSnapshot(
             ok: true, message: "MiniMax 已更新",
             windows: [QuotaWindowSnapshot(id: "plan", label: "套餐", remainPct: remain, usedPct: 100 - remain, resetAt: nil)]
@@ -125,9 +129,17 @@ public enum QuotaJSONParser {
     }
 
     public static func number(from value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+            let value = number.doubleValue
+            return value.isFinite ? value : nil
+        }
+        if let string = value as? String, let value = Double(string), value.isFinite { return value }
         return nil
+    }
+
+    private static func validPercent(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, (0...100).contains(value) else { return nil }
+        return value
     }
 
     private static func milliseconds(_ value: Double?) -> Double? {

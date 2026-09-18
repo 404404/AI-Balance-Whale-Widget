@@ -127,8 +127,11 @@ public enum RateLimitParser {
     }
 
     private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
+        if let number = value as? NSNumber, String(cString: number.objCType) != "c" {
+            let result = number.doubleValue
+            return result.isFinite ? result : nil
+        }
+        if let string = value as? String, let result = Double(string), result.isFinite { return result }
         return nil
     }
 }

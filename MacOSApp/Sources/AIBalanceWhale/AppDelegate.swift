@@ -3,6 +3,7 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let quota = QuotaRefreshCoordinator()
+    private let codexLogin = CodexLoginCoordinator()
     private var whaleWindow: WhaleWindowController!
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem!
@@ -63,6 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.onRefreshAccounts = { [weak self] id in
                 if let id { self?.quota.refreshAccount(id: id) } else { self?.quota.refresh() }
             }
+            controller.onCodexLogin = { [weak self] in
+                self?.codexLogin.onResult = { [weak self] error in
+                    if let error { self?.latestProviderState.message = error.localizedDescription }
+                    self?.quota.refresh()
+                    self?.settingsWindow?.refreshConnectionState()
+                }
+                self?.codexLogin.start()
+            }
+            controller.onCodexDisconnect = { [weak self] in self?.quota.disconnectCodex() }
             controller.onResetLayout = { [weak self] in self?.whaleWindow.resetPositionAndSize() }
             settingsWindow = controller
         }

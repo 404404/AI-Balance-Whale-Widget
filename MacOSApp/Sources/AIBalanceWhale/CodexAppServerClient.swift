@@ -14,6 +14,8 @@ struct ProviderState {
     var cliPath: String?
     var cliVersion: String?
     var authSource: String?
+    /// Set by the coordinator for each refresh cycle. It is not a secret.
+    var requestID: String?
 }
 
 private struct CachedSnapshot: Codable {
@@ -133,12 +135,33 @@ enum CodexLocator {
         return nil
     }
 
+    /// Finder-launched apps commonly do not inherit the shell's PATH. Codex
+    /// may itself be a Node entrypoint, so include both the selected executable
+    /// directory and the usual Node/Homebrew version directories when starting
+    /// it. This does not execute a shell or interpolate user input.
+    static func childEnvironment(for executable: URL, configuredHome: String, base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        var environment = base
+        environment["CODEX_HOME"] = effectiveHome(configuredHome: configuredHome, environment: base).path
+        var directories = [executable.deletingLastPathComponent().path, "/opt/homebrew/bin", "/usr/local/bin"]
+        let home = NSHomeDirectory()
+        for root in ["\(home)/.nvm/versions/node", "\(home)/.fnm/node-versions", "\(home)/.asdf/installs/nodejs"] {
+            if let entries = try? FileManager.default.contentsOfDirectory(atPath: root) {
+                directories.append(contentsOf: entries.map { "\(root)/\($0)/bin" })
+            }
+        }
+        if let existing = base["PATH"] { directories.append(contentsOf: existing.split(separator: ":").map(String.init)) }
+        var seen = Set<String>()
+        environment["PATH"] = directories.filter { seen.insert($0).inserted }.joined(separator: ":")
+        return environment
+    }
+
     static func version(at executable: URL, completion: @escaping (String?) -> Void) {
         let process = Process()
         let pipe = Pipe()
         let lock = NSLock()
         process.executableURL = executable
         process.arguments = ["--version"]
+        process.environment = childEnvironment(for: executable, configuredHome: AppPreferences.shared.codexHome)
         process.standardOutput = pipe
         process.standardError = pipe
         var completed = false
@@ -191,11 +214,11 @@ final class CodexAppServerClient {
         cache = readCache()
     }
 
-    func refresh() { DispatchQueue.main.async { [weak self] in self?.refreshOnMain() } }
+    func refresh(requestID: String? = nil) { DispatchQueue.main.async { [weak self] in self?.refreshOnMain(requestID: requestID) } }
     func stop() { DispatchQueue.main.async { [weak self] in self?.stopOnMain() } }
     func stopImmediately() { protocolQueue.async { [weak self] in self?.stopProtocol() } }
 
-    func configurationChanged() {
+    func configurationChanged(requestID: String? = nil) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             stopOnMain()
@@ -210,7 +233,7 @@ final class CodexAppServerClient {
             state.status = .idle
             state.message = "设置已保存，正在重新连接 Codex…"
             emit()
-            refreshOnMain()
+            refreshOnMain(requestID: requestID)
         }
     }
 
@@ -222,9 +245,10 @@ final class CodexAppServerClient {
         }
     }
 
-    private func refreshOnMain() {
+    private func refreshOnMain(requestID: String? = nil) {
         guard !sleeping, !refreshInFlight else { return }
         refreshInFlight = true
+        state.requestID = requestID
         state.status = .loading
         state.message = "正在从 Codex app-server 查询额度…"
         emit()
@@ -264,8 +288,7 @@ final class CodexAppServerClient {
             let stderr = Pipe()
             newProcess.executableURL = executable
             newProcess.arguments = ["app-server", "--listen", "stdio://"]
-            var environment = ProcessInfo.processInfo.environment
-            environment["CODEX_HOME"] = CodexLocator.effectiveHome(configuredHome: self.preferences.codexHome, environment: environment).path
+            let environment = CodexLocator.childEnvironment(for: executable, configuredHome: self.preferences.codexHome)
             newProcess.environment = environment
             newProcess.standardInput = stdin
             newProcess.standardOutput = stdout
@@ -469,7 +492,7 @@ final class CodexAppServerClient {
                 guard let self, !self.refreshInFlight else { return }
                 self.state.buckets = []
                 self.state.lastUpdated = nil
-                self.refreshOnMain()
+                self.refreshOnMain(requestID: self.state.requestID)
             }
         default:
             break

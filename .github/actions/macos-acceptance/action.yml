@@ -1,0 +1,15 @@
+name: macOS acceptance gate
+description: Run source and/or packaged WebKit acceptance against the checked-out commit.
+inputs:
+  mode:
+    description: source or packaged
+    required: true
+    default: source
+runs:
+  using: composite
+  steps:
+    - name: Run acceptance contract (${{ inputs.mode }})
+      shell: bash
+      env:
+        WHALE_WIDGET_RESOURCE_ROOT: ${{ env.WHALE_WIDGET_RESOURCE_ROOT }}
+      run: bash "$GITHUB_WORKSPACE/MacOSApp/scripts/acceptance-gate.sh" "${{ inputs.mode }}"

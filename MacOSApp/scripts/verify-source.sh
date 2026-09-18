@@ -27,10 +27,9 @@ if grep -Fq '<iframe' "$SETTINGS"; then
   echo "settings must not use an iframe" >&2
   exit 1
 fi
-if grep -Fq '__AIWhaleEditorMount' "$SETTINGS"; then
-  echo "settings must not remount the unopenable upstream editor" >&2
-  exit 1
-fi
+grep -Fq '__AIWhaleEditorMode' "$SETTINGS"
+grep -Fq 'upstreamEditorMount' "$SETTINGS"
+grep -Fq 'openBubbleEditor' "$SETTINGS"
 if grep -Fq 'data-page="models"' "$SETTINGS" || grep -Fq 'data-page="resources"' "$SETTINGS"; then
   echo "settings must not keep the unopenable models/resources pages" >&2
   exit 1
@@ -59,7 +58,8 @@ grep -Fq 'shouldLiveFetch' "$CATALOG"
 grep -Fq 'bubbleRevision' "$CATALOG"
 grep -Fq 'tapAdvance' "$HOST"
 grep -Fq 'native __AIWhale.update is the source of truth' "$ASSET"
-grep -Fq 'Codex 走本机 app-server' "$SETTINGS"
+grep -Fq 'Codex 登录由官方 CLI' "$SETTINGS"
+grep -Fq '不要求粘贴 session、Cookie 或 token' "$SETTINGS"
 grep -Fq 'publicAccounts' "$HOST"
 grep -Fq 'saveCredential' "$HOST"
 test -s "$SETTINGS"

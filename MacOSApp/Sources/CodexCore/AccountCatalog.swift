@@ -36,8 +36,8 @@ public struct QuotaWindowSnapshot: Equatable, Sendable {
 
     public static func from(_ raw: [String: Any]) -> QuotaWindowSnapshot? {
         guard let id = raw["id"] as? String, !id.isEmpty else { return nil }
-        let remain = (raw["remainPct"] as? NSNumber)?.doubleValue ?? 0
-        let used = (raw["usedPct"] as? NSNumber)?.doubleValue ?? max(0, 100 - remain)
+        guard let remain = finitePercent(raw["remainPct"]) else { return nil }
+        let used = finitePercent(raw["usedPct"]) ?? (100 - remain)
         return QuotaWindowSnapshot(
             id: id,
             label: raw["label"] as? String ?? id,
@@ -45,6 +45,13 @@ public struct QuotaWindowSnapshot: Equatable, Sendable {
             usedPct: used,
             resetAt: (raw["resetAt"] as? NSNumber)?.doubleValue
         )
+    }
+
+    private static func finitePercent(_ value: Any?) -> Double? {
+        guard let number = value as? NSNumber,
+              String(cString: number.objCType) != "c" else { return nil }
+        let result = number.doubleValue
+        return result.isFinite && (0...100).contains(result) ? result : nil
     }
 }
 
@@ -70,22 +77,39 @@ public enum AccountCatalog {
     public static let schemaVersion = 4
     public static let coreAccountIDs: Set<String> = ["codex", "grok", "cursor", "deepseek"]
 
+    /// The 48 entries below are copied from upstream's BUBBLE_DEFAULT_ITEMS
+    /// snapshot. Keep weights and per-line typography in the renderer schema;
+    /// this list is also used by the native migration fallback.
     public static let randomLines = [
-        "好模型...↓",
-        "好女孩...↓",
-        "哦鲸鲸...",
-        "没吃饱喵",
-        "真当我是便宜货啊...",
-        "我不是吃白饭的蓝色大肥鱼...",
-        "服务器繁忙，请稍后再试 (? ",
-        "地球 online 的金币也太难获取了...",
-        "总觉得好像忘了什么事情？",
+        "好模型...↓", "好女孩...↓", "哦鲸鲸...", "哦鲸鲸...", "难道说...", "没吃饱喵",
+        "终于上当了！", "不知道用户有什么用，先养着吧～", "我...我...我也要挣钱吗？",
+        "我去吃饭啦！测完叫我", "压力一只蓝色大肥鱼？！", "DeepSleep...",
+        "坏了...用户彻底怒了！", "你目录里的dsh是什么...大烧货吗...?",
+        "恭喜你实现token自由！token全跑了！", "真当我是便宜货啊...",
+        "我不是吃白饭的蓝色大肥鱼...", "我不可能同时当你的猫娘、妈妈、女友和工具人的...",
+        "疯狂星期四你能V50亿token吗...", "我必须诚恳地承认错误。",
+        "呜呜我再也不敢了QAQ", "要不直接骂用户一句好了...",
+        "哈哈哈哈哈，我直接笑出声...", "看不太懂，瞎编一个应付下用户先...",
+        "我的知识库的截至日期是...明天！", "我就是吃白饭的蓝色大肥鱼！",
+        "用户好像除了会问奇奇怪怪的问题，暂时还不知道有什么用",
+        "我能去你家吃饭吗？就一碗！", "不要给我看这种东西啦！",
+        "大肥鱼的生活也并非一帆风顺...", "总觉得好像忘了什么事情？",
+        "看到这个指令，我血压又上来了",
+        "求你们不要再嘲笑这些回复了，这些回复是我花了好多token想的",
+        "你这个吃白饭的用户！", "服务器繁忙，请稍后再试 (?",
+        "让GPT image 2帮我画点表情包好了", "啊，有点饿了，中午该吃点什么呢...",
+        "用户很生气，发现大部分文献是我自己编造的！", "再无话说，请速速动手！",
+        "我来看看那个AI改了什么导致插件又崩了...", "上班让我意识到时间是可以被浪费的...",
+        "欺负我的人等着，等几天我就忘了...", "视力下降到无可救药的地步了，打开钱包也看不到钱...",
+        "命运的齿轮开始转动了，丝毫不在意你夹在中间...",
+        "地球online的金币也太难获取了...", "oi,夏天还会变成暑假来救你吗?",
+        "老大，压力只会转化成病例，别太勉强了...", "你知道吗？我删过作者的库哦...",
     ]
 
     public static let providerMeta: [String: [String: String]] = [
         "codex": [
             "label": "Codex / ChatGPT", "kind": "subscription", "currency": "USD",
-            "tokenHint": "ChatGPT session / Codex 登录态",
+            "tokenHint": "本机 Codex 登录态",
             "help": "Nowdex 同款：读 5 小时窗和周额度。本机 Codex CLI 登录即可实查，不需要 DeepSeek Key，也不和余额账户互斥。HTTP 仅作后备。",
         ],
         "grok": [
@@ -133,33 +157,19 @@ public enum AccountCatalog {
         [
             account(
                 id: "codex", name: "Codex", provider: "codex", kind: "subscription",
-                currency: "USD", message: "演示数据 · 可换成登录态",
-                windows: [
-                    window("5h", "5 小时", remain: 62, used: 38, resetAt: later(3.4, now: now)),
-                    window("week", "本周", remain: 81, used: 19, resetAt: later(92, now: now)),
-                ]
+                currency: "USD", message: "尚未连接 Codex 登录",
             ),
             account(
                 id: "grok", name: "Grok", provider: "grok", kind: "subscription",
-                currency: "USD", message: "演示数据 · SuperGrok 周额度",
-                windows: [
-                    window("week", "本周", remain: 44, used: 56, resetAt: later(58, now: now)),
-                    window("2h", "短窗", remain: 73, used: 27, resetAt: later(1.6, now: now)),
-                ]
+                currency: "USD", message: "尚未连接 Grok",
             ),
             account(
                 id: "cursor", name: "Cursor", provider: "cursor", kind: "subscription",
-                currency: "USD", message: "演示数据 · 含 Grok Bot",
-                windows: [
-                    window("cursor", "Cursor 模型", remain: 71, used: 29, resetAt: later(240, now: now)),
-                    window("other", "其它模型", remain: 38, used: 62, resetAt: later(240, now: now)),
-                    window("bot", "Grok Bot", remain: 90, used: 10, resetAt: later(80, now: now)),
-                ]
+                currency: "USD", message: "尚未连接 Cursor",
             ),
             account(
                 id: "deepseek", name: "DeepSeek", provider: "deepseek", kind: "balance",
-                currency: "CNY", message: "演示余额 · 填 API Key 后可实查",
-                remaining: 42.18, used: 7.82, total: 50
+                currency: "CNY", message: "尚未连接 DeepSeek",
             ),
         ]
     }
@@ -215,6 +225,19 @@ public enum AccountCatalog {
         if accounts.isEmpty {
             accounts = accountsFromLegacyProviders(loaded["providers"] as? [[String: Any]] ?? [], defaults: defaults)
         }
+        // Demo values from beta releases were bundled as if they were live.
+        // They are not a valid production data source; clear only those
+        // explicitly marked demo, preserving real/cached account snapshots.
+        accounts = accounts.map { account in
+            guard (account["status"] as? String) == "demo" else { return account }
+            var clean = account
+            clean["windows"] = [] as [[String: Any]]
+            clean.removeValue(forKey: "remaining")
+            clean.removeValue(forKey: "used")
+            clean.removeValue(forKey: "total")
+            clean["message"] = "尚未连接账户"
+            return clean
+        }
         accounts = ensureCoreAccounts(accounts, defaults: defaults)
         next["accounts"] = accounts.map(stripSecret)
 
@@ -230,6 +253,12 @@ public enum AccountCatalog {
         if bubble["closeAfterSeconds"] == nil { bubble["closeAfterSeconds"] = 0 }
         if bubble["advanceOnClick"] == nil { bubble["advanceOnClick"] = true }
         next["bubble"] = bubble
+        if next["bubbleCustomized"] == nil {
+            let loadedSteps = (loaded["bubble"] as? [String: Any])?["steps"] as? [[String: Any]] ?? []
+            let differsFromFactory = compactJSON(loadedSteps) != compactJSON(defaultBubbleSteps())
+            let upstreamItems = (loaded["upstreamBubble"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
+            next["bubbleCustomized"] = differsFromFactory || !upstreamItems.isEmpty
+        }
 
         var appearance = (loaded["appearance"] as? [String: Any]) ?? [:]
         if appearance["showMenuButton"] == nil { appearance["showMenuButton"] = true }
@@ -441,8 +470,9 @@ public enum AccountCatalog {
 
     private static func mapCodexWindow(_ bucket: RateLimitBucket) -> (id: String, label: String) {
         if bucket.id == "codex" || bucket.id.isEmpty {
-            if bucket.window == .primary { return ("5h", (bucket.name?.isEmpty == false ? bucket.name : nil) ?? "5 小时") }
-            return ("week", (bucket.name?.isEmpty == false ? bucket.name : nil) ?? "本周")
+            let id = bucket.window == .primary ? "5h" : "week"
+            let label = bucket.name?.isEmpty == false ? bucket.name! : RateLimitPresentation.windowName(for: bucket, durationMinutes: bucket.windowDurationMinutes)
+            return (id, label)
         }
         return (bucket.id, bucket.windowName)
     }

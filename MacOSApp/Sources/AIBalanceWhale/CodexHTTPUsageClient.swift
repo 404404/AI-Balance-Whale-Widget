@@ -13,16 +13,16 @@ final class CodexHTTPUsageClient {
     private var generation = 0
 
     init(preferences: AppPreferences = .shared) { self.preferences = preferences }
-    func refresh() { queue.async { [weak self] in self?.refreshLocked() } }
-    func configurationChanged() { queue.async { [weak self] in self?.task?.cancel(); self?.state = ProviderState(); self?.refreshLocked() } }
+    func refresh(requestID: String? = nil) { queue.async { [weak self] in self?.refreshLocked(requestID: requestID) } }
+    func configurationChanged(requestID: String? = nil) { queue.async { [weak self] in self?.task?.cancel(); self?.state = ProviderState(); self?.refreshLocked(requestID: requestID) } }
     func setSleeping(_ value: Bool) { queue.async { [weak self] in self?.sleeping = value; if value { self?.task?.cancel() } else { self?.refreshLocked() } } }
     func stopImmediately() { queue.async { [weak self] in self?.task?.cancel(); self?.task = nil } }
 
-    private func refreshLocked() {
+    private func refreshLocked(requestID: String? = nil) {
         guard !sleeping else { return }
         task?.cancel(); generation += 1
         let requestGeneration = generation
-        state.status = .loading; state.message = "Reading local Codex login and usage..."; emit()
+        state.status = .loading; state.message = "Reading local Codex login and usage..."; state.requestID = requestID; emit()
         switch LocalCodexCredential.load(home: CodexLocator.effectiveHome(configuredHome: preferences.codexHome)) {
         case .failure(let error): finish(error, generation: requestGeneration)
         case .success(let credential): requestUsage(credential, generation: requestGeneration, retried: false)
@@ -80,7 +80,8 @@ private struct LocalCodexCredential {
         let url = home.appendingPathComponent("auth.json")
         guard let data = try? Data(contentsOf: url), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .failure(.notLoggedIn) }
         let mode = (root["auth_mode"] as? String ?? "").lowercased()
-        guard mode != "apikey" && root["OPENAI_API_KEY"] == nil else { return .failure(.apiKeyUnsupported) }
+        let configuredAPIKey = (root["OPENAI_API_KEY"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard mode != "apikey" && configuredAPIKey.isEmpty else { return .failure(.apiKeyUnsupported) }
         guard let tokens = root["tokens"] as? [String: Any], let access = tokens["access_token"] as? String, !access.isEmpty else { return .failure(.notLoggedIn) }
         let claims = jwtClaims(tokens["id_token"] as? String), auth = claims?["https://api.openai.com/auth"] as? [String: Any]
         guard let account = (tokens["account_id"] as? String) ?? (auth?["chatgpt_account_id"] as? String), !account.isEmpty else { return .failure(.notLoggedIn) }

@@ -2,12 +2,12 @@
 
 本 fork 新增了独立的 `AI Balance Whale.app`（macOS 14+、Apple Silicon arm64）。它保留小鲸鱼的点击气泡、按压动画、拖拽、缩放、边缘吸附、左右翻转和音效开关；App Bundle 图标与菜单栏入口都由同一份小鲸鱼素材生成，但宿主已经从 DSH 网页路由中分离出来，安装后的 App 不需要 DSH、浏览器或 Node.js。
 
-当前版本并列显示 Codex / Grok / Cursor 订阅剩余百分比和 DeepSeek 余额，不再做互斥的「Codex 模式 / DeepSeek 模式」。Codex 优先走本机 `codex app-server`（`account/read`、`account/rateLimits/read`、`account/rateLimits/updated`），HTTP WHAM 仅作后备；Grok / Cursor / DeepSeek 用设置里保存到 Keychain 的登录态或 API Key 实查。未填登录态时先显示演示数据，气泡不会空白。不会把 token、`auth.json` 或 Keychain 秘密传给 WebView、写入日志、构建产物或 GitHub。
+当前版本并列显示 Codex / Grok / Cursor 订阅剩余百分比和 DeepSeek 余额，不再做互斥的「Codex 模式 / DeepSeek 模式」。Codex 优先走本机 `codex app-server`（`account/read`、`account/rateLimits/read`、`account/rateLimits/updated`），HTTP WHAM 仅作后备；Grok / Cursor / DeepSeek 仍按各自可验证的 API/登录态能力独立配置。首次未连接账户使用空状态，不伪造额度。不会把 token、`auth.json` 或 Keychain 秘密传给 WebView、写入日志、构建产物或 GitHub。
 
 ### 安装与前置条件
 
 1. macOS 14 或更高版本（首版仅 Apple Silicon arm64）。
-2. 安装并登录 Codex CLI；App 不会自动下载、捆绑或升级 CLI。Finder 启动时若找不到终端里的 `codex`，在「设置」中指定可执行文件路径，并可指定实际 `CODEX_HOME`。
+2. 安装并登录 Codex CLI；App 不会自动下载、捆绑或升级 CLI。Finder 启动时若找不到终端里的 `codex`，在「设置」中指定可执行文件路径，并可指定实际 `CODEX_HOME`。也可以在账户卡片点击“在浏览器中登录”，由官方 `codex login` 完成浏览器回调和凭据保存；App 不要求复制 token、Cookie 或账号 ID。
 3. 从本 fork 的 [macOS Releases](https://github.com/404404/AI-Balance-Whale-Widget/releases) 下载最新 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
 
 ### macOS 首版范围
@@ -19,8 +19,8 @@
 
 ```bash
 swift test --package-path MacOSApp
-APP_VERSION=0.1.0-beta.11 BUILD_NUMBER=11 MacOSApp/scripts/build.sh
-APP_VERSION=0.1.0-beta.11 MacOSApp/scripts/create-dmg.sh
+APP_VERSION=0.1.0-beta.12 BUILD_NUMBER=12 MacOSApp/scripts/build.sh
+APP_VERSION=0.1.0-beta.12 MacOSApp/scripts/create-dmg.sh
 ```
 
 GitHub Actions 的 macOS CI 在 PR 与相关分支 push 时运行脱敏额度 fixture 测试并检查 arm64 App。发布 workflow 只在 `macos-v*` 标签或默认分支已包含该 workflow 后的 `workflow_dispatch` 运行，输入会严格校验版本与标签、拒绝现有标签/Release，并在同一 SHA 上构建、检查 DMG、上传 `SHA256SUMS` 后再公开预发布。普通 push 不发布 npm 或 Release；旧 DSH 插件版本仍由根目录 `package.json` 单独管理，保留上游插件用途与 MIT 许可证。

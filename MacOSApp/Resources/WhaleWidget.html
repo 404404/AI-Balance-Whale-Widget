@@ -130,7 +130,7 @@ html.aiwhale-editor, html.aiwhale-editor body { overflow: auto !important; }
       if (!isFinite(scale) || scale <= 0) scale = 1;
       // Native layout works in unscaled CSS points; report the actual SVG
       // bubble height rather than the old compact sentinel height.
-      post("bubbleLayout", { embedded: false, visible: visible, height: Math.ceil(br.height / scale), innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height, menuX: mr.x, menuY: mr.y, menuW: mr.width, menuH: mr.height });
+      post("bubbleLayout", { embedded: false, visible: visible, scale: scale, height: Math.ceil(br.height / scale), innerWidth: window.innerWidth, innerHeight: window.innerHeight, rootX: rr.x, rootY: rr.y, rootW: rr.width, rootH: rr.height, whaleX: wr.x, whaleY: wr.y, whaleW: wr.width, whaleH: wr.height, bubbleX: br.x, bubbleY: br.y, bubbleW: br.width, bubbleH: br.height, menuX: mr.x, menuY: mr.y, menuW: mr.width, menuH: mr.height });
     });
   }
   window.__AIWhaleHostDataUpdated = function () { var s = window.__AIWhaleState || {}; var image = document.querySelector(".dshwv-img"); if (image && s.roleImage && image.getAttribute("src") !== s.roleImage) image.src = s.roleImage; var root = document.querySelector(".dshwv-root"); if (root) root.classList.toggle("dshwv-left", !!s.flip); window.dispatchEvent(new Event("aiwhale-data")); reportLayout(); }

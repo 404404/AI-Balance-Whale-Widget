@@ -10147,6 +10147,12 @@ function whaleMoney(a) {
 function stepsToBubbleCfg(steps) {
   var items = []
   for (var i = 0; i < steps.length; i++) {
+    // Preserve an upstream item when the native host carries one. The beta
+    // simplified step format continues through the conversion below.
+    if (steps[i] && (steps[i].kind === 'choice' || steps[i].kind === 'custom' || steps[i].kind === 'random' || steps[i].kind === 'normal')) {
+      items.push(JSON.parse(JSON.stringify(steps[i])))
+      continue
+    }
     var mods = (steps[i].modules || []).map(function (m) {
       if (m && m.type === 'random' && Array.isArray(m.lines) && m.lines.length && typeof m.lines[0] === 'string') {
         return { type: 'random', lines: m.lines.map(function (t) { return { t: t, w: 1, bold: true } }), size: 8 }
@@ -10156,7 +10162,7 @@ function stepsToBubbleCfg(steps) {
     })
     items.push({ kind: 'custom', id: steps[i].id, modules: mods })
   }
-  return { v: 2, items: items, lib: [], tapAdvance: true }
+  return { v: 2, items: items, lib: [], tapAdvance: false }
 }
 function whaleMeterEl(remain) {
   var wrap = document.createElement('div')
@@ -10273,29 +10279,53 @@ function bubbleReshowCurrent() {
 function applyStandaloneNativeState() {
   if (!window.__AIWhaleStandalone) return
   var incoming = window.__AIWhaleState || {}
+  var canonical = incoming.bubbleConfig
+  var nextRevision = canonical && Array.isArray(canonical.items)
+    ? String(incoming.bubbleRevision == null ? JSON.stringify(canonical) : incoming.bubbleRevision)
+    : null
   var steps = incoming.bubbleSteps
   if (!Array.isArray(steps) || !steps.length) steps = incoming.bubble && incoming.bubble.steps
-  if (Array.isArray(steps) && steps.length) {
-    var nextRevision = String(incoming.bubbleRevision == null ? JSON.stringify(steps) : incoming.bubbleRevision)
-    var stepsKey = JSON.stringify(steps)
+  if (canonical && Array.isArray(canonical.items) && canonical.items.length) {
     if (window.__AIWhaleAppliedBubbleRevision !== nextRevision) {
-      var stepsChanged = window.__AIWhaleAppliedStepsKey !== stepsKey
+      var canonicalChanged = window.__AIWhaleAppliedStepsKey !== JSON.stringify(canonical)
       window.__AIWhaleAppliedBubbleRevision = nextRevision
+      window.__AIWhaleAppliedStepsKey = JSON.stringify(canonical)
+      bubbleCfg = JSON.parse(JSON.stringify(canonical))
+      bubbleLib = Array.isArray(canonical.lib) ? JSON.parse(JSON.stringify(canonical.lib)) : []
+      bubbleTapAdvance = canonical.tapAdvance === true
+      applyBubbleCfgSeq()
+      if (bubbleShown && canonicalChanged) {
+        bubbleSeqIdx = 0
+        bubbleRoundOn = true
+        bubbleShowSeqNext()
+      }
+    }
+  } else if (Array.isArray(steps) && steps.length) {
+    var stepsRevision = String(incoming.bubbleRevision == null ? JSON.stringify(steps) : incoming.bubbleRevision)
+    var stepsKey = JSON.stringify(steps)
+    if (window.__AIWhaleAppliedBubbleRevision !== stepsRevision) {
+      var stepsChanged = window.__AIWhaleAppliedStepsKey !== stepsKey
+      window.__AIWhaleAppliedBubbleRevision = stepsRevision
       window.__AIWhaleAppliedStepsKey = stepsKey
       bubbleCfg = stepsToBubbleCfg(steps)
       bubbleLib = []
-      bubbleTapAdvance = true
+      var incomingBubble = incoming.bubble && typeof incoming.bubble === 'object' ? incoming.bubble : {}
+      bubbleTapAdvance = incomingBubble.advanceOnClick === true
       applyBubbleCfgSeq()
-      if (bubbleShown && bubbleScene && (bubbleScene.kind === 'custom' || bubbleScene.kind === 'random' || bubbleScene.kind === 'normal')) {
-        if (stepsChanged) {
-          bubbleSeqIdx = 0
-          bubbleRoundOn = true
-          bubbleShowSeqNext()
-        } else {
-          bubbleReshowCurrent()
-        }
+      if (bubbleShown && stepsChanged) {
+        bubbleSeqIdx = 0
+        bubbleRoundOn = true
+        bubbleShowSeqNext()
       }
     }
+  } else if (window.__AIWhaleAppliedBubbleRevision !== 'upstream-bubble-defaults-v47468f7') {
+    // No user customization: keep the exact upstream BUBBLE_DEFAULT_ITEMS
+    // queue, including choice weights, line styles and random image behavior.
+    window.__AIWhaleAppliedBubbleRevision = 'upstream-bubble-defaults-v47468f7'
+    bubbleCfg = null
+    bubbleLib = []
+    bubbleTapAdvance = false
+    bubbleSeq = bubbleDefaultQueue()
   }
   if (typeof incoming.showMenuButton === 'boolean') {
     menuBtnHide = incoming.showMenuButton === false
@@ -10310,9 +10340,9 @@ function applyStandaloneNativeState() {
   var enabled = whaleNowdexAccounts().filter(function (a) { return a && a.enabled !== false })
   var first = enabled[0]
   var win = first && (first.windows || [])[0]
-  state.status = 'ok'
+  state.status = first && first.status === 'stale' ? 'stale' : (first && first.status === 'ok' ? 'ok' : 'error')
   state.message = first ? (first.message || '') : '没有启用的账户'
-  state.balance = first && first.kind === 'balance' ? Number(first.remaining || 0) : (win ? Number(win.remainPct) : null)
+  state.balance = first && first.kind === 'balance' && typeof first.remaining === 'number' ? first.remaining : (win && typeof win.remainPct === 'number' ? win.remainPct : null)
   state.currency = first && first.kind === 'balance' ? (first.currency || '') : '%'
   state.todayUsage = null
   state.usageLabel = first ? (first.name || '') : state.message
@@ -10786,6 +10816,10 @@ function bubbleClearAll() {
   try { if (animId) { cancelAnimationFrame(animId); animId = null } } catch (err) {}
   try { if (animDelayTimer) { clearTimeout(animDelayTimer); animDelayTimer = null } } catch (err) {}
   try { if (settleTimer) { clearTimeout(settleTimer); settleTimer = null } } catch (err) {}
+  // Ticker registrations retain DOM nodes. Clear them with the scene so a
+  // replaced/closed bubble cannot keep updating detached content.
+  try { bubbleCountdownRows = [] } catch (err) {}
+  try { bubblePeakRows = [] } catch (err) {}
 }
 function bubbleCloseVisual() {
   try { bubbleBox.classList.remove('dshwv-pop-open') } catch (err) {}
@@ -10803,7 +10837,7 @@ function bubbleCloseVisual() {
 // 清掉 textBox 里遗留的模块行(自定义场景切走/关闭时,防止叠到默认/消耗内容上)
 function bubbleClearModuleRows() {
   try {
-    var els = textBox.querySelectorAll('.dshwv-trow, .dshwv-mimg')
+    var els = textBox.querySelectorAll('.dshwv-trow, .dshwv-mimg, .dshwv-nowdex, .dshwv-module')
     for (var i = 0; i < els.length; i++) { try { textBox.removeChild(els[i]) } catch (err) {} }
   } catch (err) {}
 }
@@ -11753,7 +11787,7 @@ function bubbleRowContentOf(mod) {
 // 把模块追加为行到指定父容器(真实泡泡 textBox 与编辑器预览共用;旧配置每模块一行 → 与旧版逐像素一致)
 function bubbleRowsTo(parentEl, mods) {
   if (!parentEl || !Array.isArray(mods)) return
-  var old = parentEl.querySelectorAll('.dshwv-trow, .dshwv-mimg')
+  var old = parentEl.querySelectorAll('.dshwv-trow, .dshwv-mimg, .dshwv-nowdex, .dshwv-module')
   for (var i = 0; i < old.length; i++) { try { parentEl.removeChild(old[i]) } catch (err) {} }
   var ROW_MAX = 6 // 泡泡行数上限(维持旧版)
   var MOD_MAX = 6 // 每行模块数上限(F2)

@@ -68,8 +68,6 @@ final class NativeContextMenuController: NSObject, WKScriptMessageHandler {
             return
         }
         if type == "close" { close(); return }
-        if type == "close" { close(); return }
-        if type == "close" { close(); return }
         guard type == "action", let raw = body["action"] as? String, let action = Action(rawValue: raw) else { return }
         close()
         onAction?(action)

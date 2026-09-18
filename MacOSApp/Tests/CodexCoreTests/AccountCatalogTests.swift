@@ -8,6 +8,9 @@ final class AccountCatalogTests: XCTestCase {
         XCTAssertEqual(accounts.map { $0["kind"] as? String }, ["subscription", "subscription", "subscription", "balance"])
         XCTAssertTrue(accounts.allSatisfy { ($0["enabled"] as? Bool) == true })
         XCTAssertTrue(accounts.allSatisfy { ($0["authMode"] as? String) == "demo" })
+        XCTAssertTrue(accounts.allSatisfy { ($0["status"] as? String) == "demo" })
+        XCTAssertTrue(accounts.allSatisfy { ($0["windows"] as? [[String: Any]] ?? []).isEmpty })
+        XCTAssertNil(accounts.first?["remaining"])
         XCTAssertNil(accounts.first?["token"])
     }
 
@@ -18,6 +21,32 @@ final class AccountCatalogTests: XCTestCase {
         XCTAssertEqual((steps[1]["modules"] as? [[String: Any]])?[1]["accountId"] as? String, "codex")
         XCTAssertEqual((steps[4]["modules"] as? [[String: Any]])?[1]["type"] as? String, "balance")
         XCTAssertEqual((steps[5]["modules"] as? [[String: Any]])?[0]["type"] as? String, "random")
+    }
+
+    func testRandomDefaultsContainUpstreamFullPool() {
+        XCTAssertEqual(AccountCatalog.randomLines.count, 48)
+        XCTAssertTrue(AccountCatalog.randomLines.contains("你知道吗？我删过作者的库哦..."))
+    }
+
+    func testUpstreamFixtureMatchesBundledRendererSnapshot() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repository = testFile
+            .deletingLastPathComponent() // CodexCoreTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // MacOSApp
+            .deletingLastPathComponent() // repository
+        let fixtureURL = repository.appendingPathComponent("MacOSApp/acceptance/upstream-bubble-defaults.json")
+        let assetURL = repository.appendingPathComponent("assets/whale-widget.js")
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL))
+        let asset = try String(contentsOf: assetURL, encoding: .utf8)
+        let marker = "var BUBBLE_DEFAULT_ITEMS = "
+        let start = try XCTUnwrap(asset.range(of: marker)).upperBound
+        let closing = try XCTUnwrap(asset.range(of: "\n];", range: start..<asset.endIndex))
+        let jsonEnd = asset.index(before: closing.upperBound) // include ] but exclude the JavaScript semicolon
+        let snapshot = try JSONSerialization.jsonObject(with: Data(asset[start..<jsonEnd].utf8))
+        let normalizedFixture = try JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys])
+        let normalizedSnapshot = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+        XCTAssertEqual(normalizedFixture, normalizedSnapshot, "the editor/default queue fixture must match the upstream renderer snapshot")
     }
 
     func testMigrationSeedsCoreAccountsAndCanonicalSteps() {
