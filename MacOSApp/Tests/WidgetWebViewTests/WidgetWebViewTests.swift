@@ -103,12 +103,16 @@ final class WidgetWebViewTests: XCTestCase {
     /// window upward while keeping the whale at its bottom anchor.
     private final class WidgetLayoutBridge: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
+        var receivedMessages = 0
+        var lastVisible = false
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any],
                   body["type"] as? String == "bubbleLayout",
                   let webView else { return }
+            receivedMessages += 1
             let visible = (body["visible"] as? Bool) ?? (body["visible"] as? NSNumber)?.boolValue ?? false
+            lastVisible = visible
             let rawScale = (body["scale"] as? Double) ?? (body["scale"] as? NSNumber)?.doubleValue ?? 1.0
             let rawBubbleHeight = (body["height"] as? Double) ?? (body["height"] as? NSNumber)?.doubleValue ?? 178
             let scale = max(0.65, min(1.6, rawScale))
@@ -313,6 +317,7 @@ final class WidgetWebViewTests: XCTestCase {
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 180_000_000)
         let expanded = try await widgetMetrics(webView)
+        print("WHALE_LAYOUT_BRIDGE messages=\(layoutBridge.receivedMessages) lastVisible=\(layoutBridge.lastVisible)")
         assertWhaleVisible(expanded, label: "expanded bubble")
         XCTAssertEqual(expanded["bubbleVisible"] as? Bool, true)
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
