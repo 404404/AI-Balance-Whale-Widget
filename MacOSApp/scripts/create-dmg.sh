@@ -30,6 +30,7 @@ ATTACHED=1
 test -d "$MOUNT/AI Balance Whale.app"
 test -e "$MOUNT/Applications"
 test -f "$MOUNT/AI Balance Whale.app/Contents/Resources/WhaleWidget.html"
+test -f "$MOUNT/AI Balance Whale.app/Contents/Resources/upstream-bubble-defaults.json"
 lipo -archs "$MOUNT/AI Balance Whale.app/Contents/MacOS/AIBalanceWhale" | grep -Eq '(^| )arm64( |$)'
 hdiutil detach "$MOUNT" >/dev/null
 ATTACHED=0

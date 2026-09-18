@@ -131,4 +131,18 @@ final class RateLimitModelsTests: XCTestCase {
         XCTAssertNil(bucket.windowDurationMinutes)
         XCTAssertNil(bucket.resetsAt)
     }
+
+    func testWhamAdditionalBucketUsesStableFallbackIDAndRejectsBoolean() throws {
+        let parsed = WhamUsageParser.parse([
+            "additional_rate_limits": [[
+                "rate_limit": [
+                    "primary_window": ["used_percent": true, "limit_window_seconds": 900],
+                ],
+            ]],
+        ])
+        let bucket = try XCTUnwrap(parsed.buckets.first)
+        XCTAssertEqual(bucket.id, "additional-1")
+        XCTAssertNil(bucket.usedPercent)
+        XCTAssertEqual(bucket.windowDurationMinutes, 15)
+    }
 }

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "requiredCheck": "acceptance-gate",
+  "source": [
+    "CodexCoreTests.AccountCatalogTests",
+    "CodexCoreTests.RateLimitModelsTests"
+  ],
+  "auth": [
+    "WidgetWebViewTests.testPackagedSettingsMountsUpstreamEditorDirectly"
+  ],
+  "packaged": [
+    "WidgetWebViewTests.testPackagedSettingsMountsUpstreamEditorDirectly",
+    "WidgetWebViewTests.testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback",
+    "WidgetWebViewTests.testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate"
+  ],
+  "scenarios": {
+    "configuration": ["migration", "save-restart", "canonical-bubble-sync"],
+    "interaction": ["native-pointer-queue", "drag-click-separation", "webkit-ready"],
+    "packaging": ["resource-completeness", "arm64", "dmg-content"]
+  }
+}

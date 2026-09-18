@@ -23,11 +23,13 @@ final class WidgetWebViewTests: XCTestCase {
 
     private final class SettingsBridge: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
+        var receivedTypes: [String] = []
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any],
                   let type = body["type"] as? String,
                   let webView else { return }
+            receivedTypes.append(type)
             if type == "ready" {
                 let payload: [String: Any] = [
                     "config": [
@@ -40,10 +42,16 @@ final class WidgetWebViewTests: XCTestCase {
                         "records": [:]
                     ],
                     "accounts": [["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]]],
-                    "providerMeta": ["codex": ["label": "Codex / ChatGPT", "help": "test", "tokenHint": "session"]],
+                    "providerMeta": ["codex": ["label": "Codex / ChatGPT", "help": "test", "tokenHint": "本机 Codex 登录态"]],
                     "templates": [],
                     "resources": ["roles": [], "bubbles": [], "audio": []],
-                    "app": ["version": "test", "build": "test", "connection": [:], "diagnostics": []]
+                    "app": ["version": "test", "build": "test", "connection": [
+                        "resolvedPath": "/opt/homebrew/bin/codex",
+                        "effectiveHome": "/Users/test/.codex",
+                        "configPath": "/Users/test/.codex/config.toml",
+                        "configExists": false,
+                        "status": "idle",
+                    ], "diagnostics": []]
                 ]
                 evaluate(webView, functionName: "window.__AIWhaleSettings.update", arguments: [payload])
                 return
@@ -85,7 +93,7 @@ final class WidgetWebViewTests: XCTestCase {
         }
     }
 
-    func testPackagedSettingsHasMergedPagesWithoutUpstreamEditor() async throws {
+    func testPackagedSettingsMountsUpstreamEditorDirectly() async throws {
         let resourceRoot = try makeResourceRoot()
         let settings = resourceRoot.appendingPathComponent("Settings.html")
         let configuration = WKWebViewConfiguration()
@@ -131,21 +139,86 @@ final class WidgetWebViewTests: XCTestCase {
         try await Task.sleep(nanoseconds: 80_000_000)
         let bubbles = try await evaluate(webView, """
           ({
-            preview: Boolean(document.querySelector('.preview')),
+            preview: Boolean(document.querySelector('.dshwv-bubpvbox, .dshwv-minipop')),
             iframe: Boolean(document.querySelector('iframe')),
             mount: Boolean(document.querySelector('#upstreamEditorMount')),
-            editor: Boolean(window.__AIWhaleEditorMount || window.__AIWhaleEditorAPI)
+            editor: Boolean(window.__AIWhaleEditorAPI && window.__AIWhaleEditorAPI.openBubbleEditor),
+            editorVisible: Boolean(document.querySelector('#upstreamEditorMount .dshwv-bubmask[style*="flex"]')),
+            queueRows: document.querySelectorAll('#upstreamEditorMount .dshwv-bubrow').length
           })
         """) as? [String: Any] ?? [:]
-        XCTAssertEqual(bubbles["preview"] as? Bool, true)
+        XCTAssertEqual(bubbles["preview"] as? Bool, true, "the real upstream preview must be mounted")
         XCTAssertEqual(bubbles["iframe"] as? Bool, false)
-        XCTAssertEqual(bubbles["mount"] as? Bool, false)
-        XCTAssertEqual(bubbles["editor"] as? Bool, false)
+        XCTAssertEqual(bubbles["mount"] as? Bool, true)
+        XCTAssertEqual(bubbles["editor"] as? Bool, true)
+        XCTAssertEqual(bubbles["editorVisible"] as? Bool, true)
+        XCTAssertGreaterThan(bubbles["queueRows"] as? Int ?? 0, 0)
 
         _ = try await evaluate(webView, "document.querySelector(\"#nav button[data-page='accounts']\").click()")
         try await Task.sleep(nanoseconds: 80_000_000)
         let accounts = try await evaluate(webView, "Boolean(document.querySelector('[data-acc], #accountCards') && document.body.innerText.indexOf('Codex') >= 0)")
         XCTAssertEqual(accounts as? Bool, true)
+
+        let codexConnection = try await evaluate(webView, "({path:document.querySelector('[data-acc=codex] #codexPath').value, home:document.querySelector('[data-acc=codex] #codexHome').value, tokenInput:Boolean(document.querySelector('[data-acc=codex] textarea'))})") as? [String: Any] ?? [:]
+        XCTAssertEqual(codexConnection["path"] as? String, "/opt/homebrew/bin/codex")
+        XCTAssertEqual(codexConnection["home"] as? String, "/Users/test/.codex")
+        XCTAssertEqual(codexConnection["tokenInput"] as? Bool, false, "Codex must use the browser/CLI login flow rather than a pasted credential")
+        _ = try await evaluate(webView, "document.querySelector('[data-acc=codex] #loginCodex').click()")
+        for _ in 0..<20 {
+            if bridge.receivedTypes.contains("loginCodex") { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(bridge.receivedTypes.contains("loginCodex"), "browser login must cross the native bridge")
+    }
+
+    func testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate() async throws {
+        let resourceRoot = try makeResourceRoot()
+        let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: WKWebViewConfiguration())
+        let delegate = NavigationDelegate()
+        webView.navigationDelegate = delegate
+        let loaded = expectation(description: "continuous widget loaded")
+        delegate.onFinish = { loaded.fulfill() }
+        delegate.onFailure = { error in XCTFail("continuous widget failed: \(error)"); loaded.fulfill() }
+        webView.loadFileURL(html, allowingReadAccessTo: resourceRoot)
+        await fulfillment(of: [loaded], timeout: 10)
+        try await waitForJavaScript(webView)
+        _ = try await evaluate(webView, """
+          window.__AIWhale.update({
+            accounts:[{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38}]}],
+            bubble:{steps:[
+              {id:'a',modules:[{type:'text',text:'A'},{type:'quota',accountId:'codex',windowId:'5h'}]},
+              {id:'b',modules:[{type:'text',text:'B'},{type:'quota',accountId:'codex',windowId:'5h'}]},
+              {id:'c',modules:[{type:'text',text:'C'},{type:'quota',accountId:'codex',windowId:'5h'}]}
+            ],advanceOnClick:true},
+            bubbleSteps:[
+              {id:'a',modules:[{type:'text',text:'A'},{type:'quota',accountId:'codex',windowId:'5h'}]},
+              {id:'b',modules:[{type:'text',text:'B'},{type:'quota',accountId:'codex',windowId:'5h'}]},
+              {id:'c',modules:[{type:'text',text:'C'},{type:'quota',accountId:'codex',windowId:'5h'}]}
+            ],bubbleRevision:'continuous-queue'
+          })
+        """)
+        _ = try await evaluate(webView, """
+          (function () {
+            for (var i=0;i<50;i++) {
+              window.__AIWhale.nativePointerDown();
+              window.__AIWhale.nativePointerUp(false);
+              if (i % 5 === 0) window.__AIWhale.update({accounts:[{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'5h',label:'5 小时',remainPct:62 - (i % 10),usedPct:38 + (i % 10)}]}]});
+            }
+            return true;
+          }())
+        """)
+        try await Task.sleep(nanoseconds: 700_000_000)
+        let result = try await evaluate(webView, """
+          (function () {
+            var box = document.querySelector('.dshwv-text');
+            var nodes = box ? box.querySelectorAll('.dshwv-trow,.dshwv-mimg,.dshwv-nowdex,.dshwv-module').length : 0;
+            return {visible:Boolean(document.querySelector('.dshwv-pop-open')), nodes:nodes, text:(box && box.innerText || '').replace(/\\s+/g,' ').trim()};
+          }())
+        """) as? [String: Any] ?? [:]
+        XCTAssertEqual(result["visible"] as? Bool, true, "the fiftieth native click must still leave the active queue responsive")
+        XCTAssertLessThanOrEqual(result["nodes"] as? Int ?? 999, 4, "dynamic module nodes must be replaced, not accumulated")
+        XCTAssertTrue(["A", "B", "C"].contains(result["text"] as? String ?? ""), "only the current queue item may remain")
     }
 
     func testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback() async throws {

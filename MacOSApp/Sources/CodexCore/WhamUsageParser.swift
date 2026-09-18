@@ -18,7 +18,7 @@ public enum WhamUsageParser {
 
         if let additional = object["additional_rate_limits"] as? [[String: Any]] {
             for (index, entry) in additional.enumerated() {
-                let id = string(entry["metered_feature"]) ?? string(entry["limit_name"]) ?? "additional-(index + 1)"
+                let id = string(entry["metered_feature"]) ?? string(entry["limit_name"]) ?? "additional-\(index + 1)"
                 appendLimit(
                     entry["rate_limit"] as? [String: Any],
                     id: id,
@@ -59,7 +59,11 @@ public enum WhamUsageParser {
     }
 
     private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
+        if let number = value as? NSNumber,
+           String(cString: number.objCType) != "c" {
+            let result = number.doubleValue
+            return result.isFinite ? result : nil
+        }
         if let string = value as? String { return Double(string) }
         return nil
     }

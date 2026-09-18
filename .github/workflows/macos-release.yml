@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   package:
-    runs-on: macos-14
+    runs-on: macos-15
     permissions:
       contents: write
       actions: read
@@ -75,6 +75,7 @@ jobs:
           echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - name: Verify runner toolchain
         run: |
+          if [[ -d /Applications/Xcode_16.4.app ]]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
           sw_vers
           uname -m
           xcodebuild -version
@@ -108,40 +109,21 @@ jobs:
             echo "SIGNING_MODE=ad-hoc" >> "$GITHUB_ENV"
             echo 'No Developer ID secrets configured; using ad-hoc signing.'
           fi
-      - name: Detect prior successful macOS CI for this SHA
-        id: prior_ci
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          SKIP_QUALITY_GATE=false
-          RUN_ID=""
-          if RUNS="$(gh run list --workflow macos-ci.yml --commit "$GITHUB_SHA" --json databaseId,headSha,conclusion,event --limit 30)"; then
-            RUN_ID="$(printf '%s\n' "$RUNS" | jq -r --arg sha "$GITHUB_SHA" '[.[] | select(.conclusion == "success" and .event == "push" and .headSha == $sha) | .databaseId][0] // empty')"
-          fi
-          if [[ -n "$RUN_ID" ]]; then
-            SKIP_QUALITY_GATE=true
-            echo "SHA $GITHUB_SHA already passed macOS CI on push (run $RUN_ID); skipping fixture, source, and packaged WebKit tests."
-          else
-            echo "No successful push macOS CI found for $GITHUB_SHA; running the full quality gate before packaging."
-          fi
-          echo "skip_quality_gate=$SKIP_QUALITY_GATE" >> "$GITHUB_OUTPUT"
-      - name: Run fixture tests
-        if: steps.prior_ci.outputs.skip_quality_gate != 'true'
-        run: swift test --package-path MacOSApp --skip WidgetWebViewTests
-      - name: Regression source checks
-        if: steps.prior_ci.outputs.skip_quality_gate != 'true'
-        run: bash MacOSApp/scripts/verify-source.sh
+      - name: Acceptance gate (source)
+        uses: ./.github/actions/macos-acceptance
+        with:
+          mode: source
       - name: Build App bundle
         env:
           APP_VERSION: ${{ steps.release.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: MacOSApp/scripts/build.sh
-      - name: Run packaged WKWebView geometry tests
-        if: steps.prior_ci.outputs.skip_quality_gate != 'true'
+      - name: Acceptance gate (packaged app)
+        uses: ./.github/actions/macos-acceptance
         env:
           WHALE_WIDGET_RESOURCE_ROOT: ${{ github.workspace }}/MacOSApp/dist/AI Balance Whale.app/Contents/Resources
-        run: swift test --package-path MacOSApp --filter WidgetWebViewTests
+        with:
+          mode: packaged
       - name: Create and validate DMG
         env:
           APP_VERSION: ${{ steps.release.outputs.version }}
@@ -172,9 +154,18 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "${{ steps.release.outputs.version }}"
           mkdir -p "$RUNNER_TEMP/ai-balance-whale-verify"
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/ai-balance-whale-verify" "$DMG" >/dev/null
-          test -d "$RUNNER_TEMP/ai-balance-whale-verify/AI Balance Whale.app"
+          MOUNTED_APP="$RUNNER_TEMP/ai-balance-whale-verify/AI Balance Whale.app"
+          test -d "$MOUNTED_APP"
           test -e "$RUNNER_TEMP/ai-balance-whale-verify/Applications"
+          bash MacOSApp/scripts/verify-app.sh "$MOUNTED_APP"
           hdiutil detach "$RUNNER_TEMP/ai-balance-whale-verify" >/dev/null
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-acceptance-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-balance-whale-acceptance
+          if-no-files-found: error
       - name: Write release notes
         run: |
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF

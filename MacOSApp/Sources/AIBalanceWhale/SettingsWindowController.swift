@@ -9,6 +9,8 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
     var onConnectionChanged: (() -> Void)?
     var onTestConnection: ((String, String) -> Void)?
     var onRefreshAccounts: ((String?) -> Void)?
+    var onCodexLogin: (() -> Void)?
+    var onCodexDisconnect: (() -> Void)?
     var onResetLayout: (() -> Void)?
     var connectionState: (() -> ProviderState)?
 
@@ -103,10 +105,15 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             pending.forEach { sendJavaScript($0) }
         case "saveConfig":
             guard let config = body["config"] as? [String: Any] else { return }
-            WhaleConfigurationStore.shared.save(config)
-            applyConfiguration(config)
-            onAppearanceChanged?()
-            sendPayload()
+            let saved = WhaleConfigurationStore.shared.save(config)
+            if saved {
+                applyConfiguration(WhaleConfigurationStore.shared.snapshot())
+                onAppearanceChanged?()
+                sendPayload()
+            }
+            if let requestID = body["requestId"] as? String {
+                sendJavaScript("window.__AIWhaleSettings && window.__AIWhaleSettings.saveResult(\(json(requestID)),\(saved ? "true" : "false"))")
+            }
         case "previewAppearance":
             guard let config = body["config"] as? [String: Any] else { return }
             applyConfiguration(config)
@@ -126,6 +133,10 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             AppPreferences.shared.codexPath = path
             AppPreferences.shared.codexHome = home
             onTestConnection?(path, home)
+        case "loginCodex":
+            onCodexLogin?()
+        case "disconnectCodex":
+            onCodexDisconnect?()
         case "redetectConnection":
             AppPreferences.shared.codexPath = ""
             onConnectionChanged?()

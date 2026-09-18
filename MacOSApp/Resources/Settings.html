@@ -31,13 +31,48 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
 </aside>
 <main>
   <section class="page" data-page="general"><h2>通用</h2><p class="lead">缩放、吸附、侧边按钮和右键菜单都在这里。</p><div id="general"></div></section>
-  <section class="page" data-page="accounts"><h2>账户与额度</h2><p class="lead">订阅（Codex / Grok / Cursor）和余额（DeepSeek）是并列账户，不再互相覆盖。演示数据可直接点气泡查看。密钥只进本机 Keychain。</p><div id="accounts"></div></section>
-  <section class="page" data-page="bubbles"><h2>气泡内容</h2><p class="lead">这里改的就是点人偶弹出的队列，保存即时生效。</p><div id="bubbles"></div></section>
+  <section class="page" data-page="accounts"><h2>账户与额度</h2><p class="lead">订阅（Codex / Grok / Cursor）和余额（DeepSeek）是并列账户，不再互相覆盖。未连接账户不会显示伪造额度；密钥只进本机 Keychain。</p><div id="accounts"></div></section>
+  <section class="page" data-page="bubbles"><h2>气泡内容</h2><p class="lead">这里直接使用上游气泡编辑器：点击队列、并列权重、模块排版、样式、随机语句和预览共用桌面渲染器。</p><div id="bubbles"><div class="card"><p class="note">编辑器加载本地资源中；修改后使用编辑器的保存按钮写入同一份气泡配置。</p><div id="upstreamEditorMount"></div></div></div></section>
   <section class="page" data-page="appearance"><h2>外观</h2><p class="lead">人偶使用内置鲸鱼形象。左吸附会水平翻转。</p><div id="appearance"></div></section>
   <section class="page" data-page="sounds"><h2>音效</h2><div id="sounds"></div></section>
   <section class="page" data-page="alerts"><h2>提醒</h2><div id="alerts"></div></section>
   <section class="page" data-page="about"><h2>关于</h2><div id="about"></div></section>
 </main>
+<script>
+// The mature upstream editor is mounted directly into this page. It is not an
+// iframe and never receives credentials; its local routes are handled by the
+// native SettingsWindowController bridge below.
+window.__AIWhaleStandalone = true;
+window.__AIWhaleEditorMode = true;
+window.__AIWhaleEditorMount = document.getElementById("upstreamEditorMount");
+window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
+(function () {
+  var pending = Object.create(null), serial = 0;
+  function post(type, payload) {
+    var body = Object.assign({ type: type, navigationToken: "settings-editor" }, payload || {});
+    try { window.webkit.messageHandlers.bridge.postMessage(body); } catch (e) { console.error(e); }
+  }
+  window.__AIWhaleNativePost = post;
+  window.__AIWhaleNativeFetch = window.fetch.bind(window);
+  window.__AIWhaleHostResponse = function (id, status, body) {
+    var item = pending[String(id)]; if (!item) return; delete pending[String(id)];
+    item.resolve(new Response(JSON.stringify(body || {}), { status: Number(status) || 500, headers: { "Content-Type": "application/json" } }));
+  };
+  window.fetch = function (input, options) {
+    options = options || {};
+    var raw = typeof input === "string" ? input : (input && input.url) || "";
+    var url; try { url = new URL(raw, location.href); } catch (e) { return Promise.reject(e); }
+    if (url.pathname.indexOf("/dsh-whale/") !== 0) return window.__AIWhaleNativeFetch(input, options);
+    var id = "settings-host-" + (++serial);
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { delete pending[id]; reject(new Error("本地设置请求超时")); }, 30000);
+      pending[id] = { resolve: function (response) { clearTimeout(timer); resolve(response); }, reject: reject };
+      post("hostRequest", { requestId: id, method: String(options.method || "GET").toUpperCase(), path: url.pathname + url.search, body: options.body || null });
+    });
+  };
+}());
+</script>
+<script src="whale-widget.js"></script>
 <script>
 (function () {
   "use strict";
@@ -50,10 +85,11 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
   }
   function esc(x) { return String(x == null ? "" : x).replace(/[&<>"']/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]); }); }
   function get(a, d) { var x = m.config; for (var i = 0; i < a.length; i++) { if (!x || typeof x !== "object" || !(a[i] in x)) return d; x = x[a[i]]; } return x == null ? d : x; }
-  function set(a, v) { var x = m.config; for (var i = 0; i < a.length - 1; i++) { if (!x[a[i]] || typeof x[a[i]] !== "object") x[a[i]] = {}; x = x[a[i]]; } x[a[a.length - 1]] = v; }
+  function set(a, v) { var x = m.config; for (var i = 0; i < a.length - 1; i++) { if (!x[a[i]] || typeof x[a[i]] !== "object") x[a[i]] = {}; x = x[a[i]]; } x[a[a.length - 1]] = v; if (a[0] === "bubble") m.config.bubbleCustomized = true; }
   function val(id) { var x = document.getElementById(id); return x ? x.value : ""; }
   function yes(id) { var x = document.getElementById(id); return !!(x && x.checked); }
-  function save() { post("saveConfig", { config: m.config }); say("已保存，运行中的鲸鱼已更新"); }
+  var saveSerial = 0;
+  function save() { var requestId = "settings-save-" + (++saveSerial); post("saveConfig", { config: m.config, requestId: requestId }); }
   function say(s) {
     var x = document.getElementById("toast");
     if (!x) { x = document.createElement("div"); x.id = "toast"; x.style = "position:fixed;right:20px;bottom:18px;padding:9px 13px;background:#203170;color:#fff;border-radius:8px;font-size:12px"; document.body.appendChild(x); }
@@ -145,8 +181,8 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
       return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(w.label) + '</span><span class="mono">剩余 ' + remainLabel(w.remainPct) + '</span></div><div class="meter"><i style="width:' + Number(w.remainPct || 0) + '%"></i></div></div>';
     }).join("");
     var balance = a.kind === "balance" ? '<p class="mono" style="font-size:20px;margin:8px 0 0">' + money(a) + "</p>" : windows;
-    var tokenHint = a.provider === "codex" ? "可选：ChatGPT session（HTTP 后备，本机 CLI 登录才是主路径）" : info.tokenHint;
-    var showToken = a.provider === "codex" || a.authMode === "token";
+    var tokenHint = info.tokenHint;
+    var showToken = a.provider !== "codex" && a.authMode === "token";
     var token = showToken ? '<label class="field">' + esc(tokenHint) + '<textarea id="tok-' + esc(a.id) + '" placeholder="只存在本机 Keychain，不会写进仓库"></textarea></label>' : "";
     var core = ["codex", "grok", "cursor", "deepseek"].indexOf(a.id) >= 0;
     var conn = a.provider === "codex" ? codexCard() : "";
@@ -156,7 +192,7 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
   }
   function codexCard() {
     var c = (m.app && m.app.connection) || {};
-    return '<div class="status" style="margin-top:8px">' + esc(c.message || "未测试") + '<br>连接状态：' + esc(c.status || "idle") + (c.account ? " · " + esc(c.account) : "") + (c.version ? " · CLI " + esc(c.version) : "") + '</div><div class="field"><label>codex 可执行文件</label><input id="codexPath" value="' + esc(c.resolvedPath || c.path || "") + '"></div><div class="actions"><button class="secondary" id="redetect">重新检测</button><button class="secondary" id="chooseCodex">选择可执行文件…</button></div><div class="field"><label>CODEX_HOME</label><input id="codexHome" value="' + esc(c.effectiveHome || c.home || "") + '"></div><div class="actions"><button class="secondary" id="chooseHome">选择 CODEX_HOME…</button><button class="secondary" id="saveConn">保存连接</button><button class="secondary" id="testConn">测试并刷新</button></div><p class="note">Codex 走本机 app-server 读订阅窗，与 DeepSeek 余额并列。粘贴 session 只在 CLI 不可用时作为 HTTP 后备。Token 不进 git。</p>';
+    return '<div class="status" style="margin-top:8px">' + esc(c.message || "未测试") + '<br>连接状态：' + esc(c.status || "idle") + (c.account ? " · " + esc(c.account) : "") + (c.version ? " · CLI " + esc(c.version) : "") + '</div><div class="field"><label>codex 可执行文件</label><input id="codexPath" value="' + esc(c.resolvedPath || c.path || "") + '"></div><div class="actions"><button class="secondary" id="redetect">重新检测</button><button class="secondary" id="chooseCodex">选择可执行文件…</button><button class="primary" id="loginCodex">在浏览器中登录</button><button class="secondary" id="disconnectCodex">断开本 App 连接</button></div><div class="field"><label>CODEX_HOME</label><input id="codexHome" value="' + esc(c.effectiveHome || c.home || "") + '"></div><div class="actions"><button class="secondary" id="chooseHome">选择 CODEX_HOME…</button><button class="secondary" id="saveConn">保存连接</button><button class="secondary" id="testConn">测试并刷新</button></div><p class="note">Codex 登录由官方 CLI 在系统浏览器中完成，回调和凭据由 Codex 管理；本页面不要求粘贴 session、Cookie 或 token。额度通过 app-server/官方登录状态读取。断开只停止本 App 的读取，不会注销 CLI。</p>';
   }
   function bindAccountCard(a) {
     var root = document.querySelector('[data-acc="' + a.id + '"]');
@@ -175,24 +211,22 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
       var t = document.getElementById("testConn"); if (t) t.onclick = function () { post("testConnection", payload()); post("refreshAccounts", { accountId: "codex" }); };
       var r = document.getElementById("redetect"); if (r) r.onclick = function () { post("redetectConnection"); };
       var c = document.getElementById("chooseCodex"); if (c) c.onclick = function () { post("chooseCodex"); };
+      var login = document.getElementById("loginCodex"); if (login) login.onclick = function () { post("loginCodex"); say("已启动 Codex 浏览器登录，请在浏览器完成授权"); };
+      var disconnect = document.getElementById("disconnectCodex"); if (disconnect) disconnect.onclick = function () { post("disconnectCodex"); say("已断开本 App 连接，未注销 Codex CLI"); };
       var h = document.getElementById("chooseHome"); if (h) h.onclick = function () { post("chooseCodexHome"); };
     }
   }
 
   function bubblesPage() {
-    var ss = steps();
-    var accs = accounts();
-    document.getElementById("bubbles").innerHTML = ss.map(function (step, i) {
-      return '<div class="card" data-step="' + esc(step.id) + '"><h3>第 ' + (i + 1) + " 条</h3>" + stepView(step, accs) + (step.modules || []).map(function (mod, mi) { return moduleEditor(mod, i, mi, accs); }).join("") + '<div class="step-tools"><button class="secondary up">上移</button><button class="secondary down">下移</button><button class="danger rm">删除这条</button></div></div>';
-    }).join("") + '<button class="primary" id="addStep">添加气泡</button>';
-    document.getElementById("addStep").onclick = function () { ss.push({ id: uid("step"), modules: [{ type: "text", text: "新内容", size: 14, bold: true }] }); set(["bubble", "steps"], ss); save(); bubblesPage(); };
-    ss.forEach(function (step, i) {
-      var root = document.querySelector('[data-step="' + step.id + '"]');
-      root.querySelector(".up").onclick = function () { if (i > 0) { var t = ss[i - 1]; ss[i - 1] = ss[i]; ss[i] = t; set(["bubble", "steps"], ss); save(); bubblesPage(); } };
-      root.querySelector(".down").onclick = function () { if (i < ss.length - 1) { var t = ss[i + 1]; ss[i + 1] = ss[i]; ss[i] = t; set(["bubble", "steps"], ss); save(); bubblesPage(); } };
-      root.querySelector(".rm").onclick = function () { ss.splice(i, 1); set(["bubble", "steps"], ss); save(); bubblesPage(); };
-      (step.modules || []).forEach(function (mod, mi) { bindModuleEditor(root, ss, i, mi, accs); });
-    });
+    var host = document.getElementById("upstreamEditorMount");
+    if (!host) return;
+    host.setAttribute("aria-label", "上游气泡编辑器");
+    if (window.__AIWhaleEditorAPI && window.__AIWhaleEditorAPI.openBubbleEditor) {
+      window.__AIWhaleEditorMount = host;
+      window.__AIWhaleEditorAPI.openBubbleEditor();
+    } else {
+      host.innerHTML = '<p class="status">本地编辑器脚本尚未就绪，请重新打开“气泡内容”。</p>';
+    }
   }
   function moduleEditor(mod, si, mi, accs) {
     var subs = "", bals = "";
@@ -264,6 +298,7 @@ button.primary{background:#203170;color:white}button.secondary{background:#edf1f
       if (!readyUI) { navigation(); go(page); readyUI = true; return; }
       if (page === "accounts" || page === "alerts" || page === "about") render();
     },
+    saveResult: function (requestId, ok) { say(ok ? "已保存，运行中的鲸鱼已更新" : "保存失败：配置文件无法写入"); },
     selectPage: go,
     preview: function () {}
   };

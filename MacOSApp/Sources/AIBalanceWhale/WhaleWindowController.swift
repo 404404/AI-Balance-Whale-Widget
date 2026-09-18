@@ -310,6 +310,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let sound = configuration["sound"] as? [String: Any] ?? [:]
         let bubble = configuration["bubble"] as? [String: Any] ?? [:]
         let steps = (bubble["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
+        let customized = (configuration["bubbleCustomized"] as? Bool) ?? true
         let accounts = store.publicAccounts()
         let roleID = appearance["roleId"] as? String
         let roleImage = roleID.flatMap { store.resourceDataURL(kind: "roles", id: $0) } ?? "DSniang1.png"
@@ -317,12 +318,21 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let releaseRef = sound["release"] as? String ?? "Ya2.mp3"
         let pressSound = store.resourceDataURL(kind: "audio", id: pressRef) ?? pressRef
         let releaseSound = store.resourceDataURL(kind: "audio", id: releaseRef) ?? releaseRef
-        let revision = AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
-        let object: [String: Any] = [
+        let revision: String
+        if customized, let items = bubble["items"] as? [[String: Any]], !items.isEmpty {
+            revision = AccountCatalog.compactJSON(["items": items, "lib": bubble["lib"] as? [[String: Any]] ?? [], "tapAdvance": bubble["tapAdvance"] as? Bool ?? false]) ?? AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
+        } else {
+            revision = AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
+        }
+        let effectiveSteps = customized ? steps : []
+        var object: [String: Any] = [
             "accounts": accounts,
-            "bubble": ["steps": steps, "advanceOnClick": bubble["advanceOnClick"] ?? true, "closeAfterSeconds": bubble["closeAfterSeconds"] ?? 0],
-            "bubbleSteps": steps,
-            "bubbleRevision": revision,
+            // Keep one explicit standalone value.  An empty steps array is
+            // meaningful: it selects the bundled upstream queue rather than
+            // silently reintroducing the legacy native defaults.
+            "bubble": ["steps": effectiveSteps, "advanceOnClick": bubble["advanceOnClick"] ?? true, "closeAfterSeconds": bubble["closeAfterSeconds"] ?? 0],
+            "bubbleSteps": effectiveSteps,
+            "bubbleRevision": customized ? revision : "upstream-bubble-defaults-v47468f7",
             "scale": AppPreferences.shared.scale,
             "soundEnabled": AppPreferences.shared.soundEnabled,
             "bubbleCloseAfterSeconds": AppPreferences.shared.bubbleCloseAfterSeconds,
@@ -333,6 +343,15 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
             "pressSound": pressSound,
             "releaseSound": releaseSound
         ]
+        if customized, let items = bubble["items"] as? [[String: Any]], !items.isEmpty {
+            object["bubbleConfig"] = [
+                "v": bubble["v"] ?? 1,
+                "items": items,
+                "lib": bubble["lib"] as? [[String: Any]] ?? [],
+                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? false),
+                "closeAfterSeconds": bubble["closeAfterSeconds"] ?? 0,
+            ]
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let payloadJSON = String(data: data, encoding: .utf8) else { return }
         pendingRenderScript = "window.__AIWhale && window.__AIWhale.update(\(payloadJSON))"

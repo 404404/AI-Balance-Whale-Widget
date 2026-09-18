@@ -2,7 +2,7 @@ name: macOS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**', 'feat/**']
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -24,35 +24,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-build:
-    runs-on: macos-14
+  acceptance-gate:
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
       - name: Verify runner toolchain
         run: |
+          if [[ -d /Applications/Xcode_16.4.app ]]; then sudo xcode-select -s /Applications/Xcode_16.4.app; fi
           sw_vers
           uname -m
           xcodebuild -version
           swift --version
           test "$(uname -m)" = "arm64"
-      - name: Run Codex protocol fixture tests
-        # WidgetWebViewTests already exercise source assets when
-        # WHALE_WIDGET_RESOURCE_ROOT is unset. Skip that pass here and keep
-        # packaged-app coverage after the ad-hoc bundle is built.
-        run: swift test --package-path MacOSApp --skip WidgetWebViewTests
-      - name: Regression source checks
-        run: bash MacOSApp/scripts/verify-source.sh
+      - name: Acceptance gate (source)
+        uses: ./.github/actions/macos-acceptance
+        with:
+          mode: source
       - name: Build ad-hoc arm64 App
         env:
           BUILD_NUMBER: ${{ github.run_number }}
           SIGNING_MODE: ad-hoc
         run: MacOSApp/scripts/build.sh
-      - name: Run packaged WKWebView geometry tests
+      - name: Acceptance gate (packaged app)
+        uses: ./.github/actions/macos-acceptance
         env:
           WHALE_WIDGET_RESOURCE_ROOT: ${{ github.workspace }}/MacOSApp/dist/AI Balance Whale.app/Contents/Resources
-        run: swift test --package-path MacOSApp --filter WidgetWebViewTests
+        with:
+          mode: packaged
       - name: Verify App bundle
         run: |
           set -euo pipefail
@@ -66,3 +66,10 @@ jobs:
           test "$SOURCE_SHORT" = "${SOURCE_TAG%%-*}"
           test "$BUILT_SHORT" = "$SOURCE_SHORT"
           test "$BUILT_TAG" = "$SOURCE_TAG"
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-acceptance-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-balance-whale-acceptance
+          if-no-files-found: error

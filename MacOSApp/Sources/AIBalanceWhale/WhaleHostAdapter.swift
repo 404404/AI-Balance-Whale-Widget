@@ -25,11 +25,20 @@ final class WhaleHostAdapter {
             }
             if verb == "POST" || verb == "PUT" {
                 let next = bodyObject(body)
-                guard !next.isEmpty else { return (400, ["ok": false, "error": "泡泡配置为空"]) }
-                let steps = AccountCatalog.canonicalSteps(fromPosted: next)
-                WhaleConfigurationStore.shared.savePatch(["bubble": ["steps": steps]])
-                owner?.bubbleConfigurationDidChange(["steps": steps])
-                return (200, ["ok": true, "config": bubbleConfig(), "revision": steps.count])
+                guard let items = next["items"] as? [[String: Any]], !items.isEmpty else {
+                    return (400, ["ok": false, "error": "泡泡队列为空或格式无效"])
+                }
+                var canonical: [String: Any] = [
+                    "v": next["v"] ?? 1,
+                    "items": items,
+                    "lib": next["lib"] as? [[String: Any]] ?? [],
+                    "tapAdvance": next["tapAdvance"] as? Bool ?? false,
+                ]
+                if let close = next["closeAfterSeconds"] { canonical["closeAfterSeconds"] = close }
+                let saved = WhaleConfigurationStore.shared.savePatch(["bubble": canonical, "bubbleCustomized": true])
+                guard saved else { return (503, ["ok": false, "error": "泡泡配置无法写入 Application Support"]) }
+                owner?.bubbleConfigurationDidChange(canonical)
+                return (200, ["ok": true, "config": bubbleConfig(), "revision": AccountCatalog.compactJSON(canonical) ?? "updated"])
             }
         case "/dsh-whale/api-models.json":
             if verb == "GET" { return (200, apiModelsPayload()) }
@@ -145,16 +154,29 @@ final class WhaleHostAdapter {
     private func bubbleConfig() -> [String: Any] {
         let snapshot = WhaleConfigurationStore.shared.snapshot()
         let bubble = snapshot["bubble"] as? [String: Any] ?? [:]
+        let customized = snapshot["bubbleCustomized"] as? Bool ?? false
         let steps = (bubble["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
+        if customized, let items = bubble["items"] as? [[String: Any]], !items.isEmpty {
+            var result: [String: Any] = [
+                "v": bubble["v"] ?? 1,
+                "items": items,
+                "lib": bubble["lib"] as? [[String: Any]] ?? [],
+                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? false),
+                "accounts": WhaleConfigurationStore.shared.publicAccounts(),
+            ]
+            if let close = bubble["closeAfterSeconds"] { result["closeAfterSeconds"] = close }
+            return result
+        }
+        let items = customized ? steps.map { step -> [String: Any] in
+            ["kind": "custom", "id": step["id"] as? String ?? "", "modules": step["modules"] as? [[String: Any]] ?? []]
+        } : defaultBubbleItems()
         return [
             "v": 2,
             "steps": steps,
             "accounts": WhaleConfigurationStore.shared.publicAccounts(),
-            "items": steps.map { step -> [String: Any] in
-                ["kind": "custom", "id": step["id"] as? String ?? "", "modules": step["modules"] as? [[String: Any]] ?? []]
-            },
+            "items": items,
             "lib": [],
-            "tapAdvance": true
+            "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? false)
         ]
     }
 
@@ -183,6 +205,17 @@ final class WhaleHostAdapter {
     }
 
     private func defaultBubbleItems() -> [[String: Any]] {
+        // The upstream snapshot is the single source of truth for a fresh
+        // editor and the standalone desktop queue. It is copied into the
+        // bundle by build.sh; the fallback below keeps `swift run` useful when
+        // a developer runs the executable without a built app bundle.
+        if let url = Bundle.main.url(forResource: "upstream-bubble-defaults", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+           items.count == 2,
+           (items[1]["options"] as? [[String: Any]])?.first?["item"] != nil {
+            return items
+        }
         let randomLines: [[String: Any]] = [
             ["t": "好模型...↓", "w": 10, "bold": true, "size": 22],
             ["t": "好女孩...↓", "w": 10, "bold": true, "size": 22],
