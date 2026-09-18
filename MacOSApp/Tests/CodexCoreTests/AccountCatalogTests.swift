@@ -42,7 +42,8 @@ final class AccountCatalogTests: XCTestCase {
         let marker = "var BUBBLE_DEFAULT_ITEMS = "
         let start = try XCTUnwrap(asset.range(of: marker)).upperBound
         let closing = try XCTUnwrap(asset.range(of: "\n];", range: start..<asset.endIndex))
-        let snapshot = try JSONSerialization.jsonObject(with: Data(asset[start..<closing.lowerBound].utf8))
+        let jsonEnd = asset.index(before: closing.upperBound) // include ] but exclude the JavaScript semicolon
+        let snapshot = try JSONSerialization.jsonObject(with: Data(asset[start..<jsonEnd].utf8))
         let normalizedFixture = try JSONSerialization.data(withJSONObject: fixture, options: [.sortedKeys])
         let normalizedSnapshot = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
         XCTAssertEqual(normalizedFixture, normalizedSnapshot, "the editor/default queue fixture must match the upstream renderer snapshot")
