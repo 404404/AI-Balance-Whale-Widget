@@ -283,14 +283,17 @@ class WidgetWebViewTests: XCTestCase {
             return try await evaluate(webView, "document.querySelector('.dshwv-text').textContent") as? String ?? ""
         }
 
-        XCTAssertTrue((try await clickAndRead()).contains("QUEUE-B"), "second native click must advance to the second item")
-        XCTAssertTrue((try await clickAndRead()).contains("QUEUE-C"), "third native click must advance to the third item")
+        let secondText = try await clickAndRead()
+        XCTAssertTrue(secondText.contains("QUEUE-B"), "second native click must advance to the second item")
+        let thirdText = try await clickAndRead()
+        XCTAssertTrue(thirdText.contains("QUEUE-C"), "third native click must advance to the third item")
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown(); window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 260_000_000)
         let closed = try await evaluate(webView, "Boolean(document.querySelector('.dshwv-pop-open'))") as? Bool ?? true
         XCTAssertFalse(closed, "the click after the last item must close the bubble")
 
-        XCTAssertTrue((try await clickAndRead()).contains("QUEUE-A"), "the next click after close must start the queue at the first item")
+        let restartedText = try await clickAndRead()
+        XCTAssertTrue(restartedText.contains("QUEUE-A"), "the next click after close must start the queue at the first item")
     }
 
     func testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback() async throws {
