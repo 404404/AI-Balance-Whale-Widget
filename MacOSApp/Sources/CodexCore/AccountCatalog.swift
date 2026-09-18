@@ -81,7 +81,7 @@ public enum AccountCatalog {
     /// snapshot. Keep weights and per-line typography in the renderer schema;
     /// this list is also used by the native migration fallback.
     public static let randomLines = [
-        "好模型...↓", "好女孩...↓", "哦鲸鲸...", "难道说...", "没吃饱喵",
+        "好模型...↓", "好女孩...↓", "哦鲸鲸...", "哦鲸鲸...", "难道说...", "没吃饱喵",
         "终于上当了！", "不知道用户有什么用，先养着吧～", "我...我...我也要挣钱吗？",
         "我去吃饭啦！测完叫我", "压力一只蓝色大肥鱼？！", "DeepSleep...",
         "坏了...用户彻底怒了！", "你目录里的dsh是什么...大烧货吗...?",
