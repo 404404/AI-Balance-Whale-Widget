@@ -283,7 +283,7 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
         if let plan = status?.planType { result["plan"] = plan }
         if let accountID = status?.accountKey { result["accountID"] = accountID }
         if let source = status?.authSource { result["authSource"] = source }
-        result["buckets"] = status?.buckets.map(\.dictionary) ?? []
+        result["buckets"] = AccountCatalog.windows(from: status?.buckets ?? []).map(\.dictionary)
         if let updated = status?.lastUpdated { result["lastUpdated"] = updated.timeIntervalSince1970 * 1000 }
         return result
     }

@@ -37,3 +37,6 @@ enum ProviderError: LocalizedError {
         case .apiKeyUnsupported: return "API Key 不能读取 ChatGPT 订阅额度，请使用 ChatGPT 登录"
         case .unsupported(let message): return message
         case .offline(let message): return "额度查询失败：\(message)"
+        }
+    }
+}
