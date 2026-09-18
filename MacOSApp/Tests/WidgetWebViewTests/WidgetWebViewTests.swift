@@ -51,6 +51,7 @@ class WidgetWebViewTests: XCTestCase {
                         "configPath": "/Users/test/.codex/config.toml",
                         "configExists": false,
                         "status": "idle",
+                        "buckets": [["id": "primary-300", "label": "5 小时", "remainPct": 62, "usedPct": 38]],
                     ], "diagnostics": []]
                 ]
                 evaluate(webView, functionName: "window.__AIWhaleSettings.update", arguments: [payload])
@@ -167,6 +168,8 @@ class WidgetWebViewTests: XCTestCase {
         try await Task.sleep(nanoseconds: 80_000_000)
         let accounts = try await evaluate(webView, "Boolean(document.querySelector('[data-acc], #accountCards') && document.body.innerText.indexOf('Codex') >= 0)")
         XCTAssertEqual(accounts as? Bool, true)
+        let connectionWindowText = try await evaluate(webView, "document.querySelector(\"[data-acc=codex] .field\").innerText") as? String ?? ""
+        XCTAssertTrue(connectionWindowText.contains("剩余 62%"), "Codex Auth connection card must render the canonical remainPct window")
 
         let codexConnection = try await evaluate(webView, "({pathFields:Boolean(document.querySelector('[data-acc=codex] #codexPath, [data-acc=codex] #codexHome')), tokenInput:Boolean(document.querySelector('[data-acc=codex] textarea')), connect:Boolean(document.querySelector('[data-acc=codex] #loginCodex')), refresh:Boolean(document.querySelector('[data-acc=codex] #refreshCodex')), disconnect:Boolean(document.querySelector('[data-acc=codex] #disconnectCodex'))})") as? [String: Any] ?? [:]
         XCTAssertEqual(codexConnection["pathFields"] as? Bool, false, "Codex settings must not require CLI paths or CODEX_HOME")
@@ -255,7 +258,7 @@ class WidgetWebViewTests: XCTestCase {
             accounts:[{id:"codex",name:"Codex",provider:"codex",kind:"subscription",enabled:true,status:"ok",windows:[{id:"primary-300",label:"5 小时",remainPct:62,usedPct:38}]}],
             bubble:{advanceOnClick:true},
             bubbleConfig:{v:1,items:[
-              {kind:"custom",modules:[{type:"text",text:"QUEUE-A",size:8}]},
+              {kind:"custom",modules:[{type:"text",text:"QUEUE-A",size:8},{type:"quota",modelId:"codex",windowId:"primary-300",tpl:"剩余 {quota_left}"},{type:"plan",modelId:"codex",windowId:"primary-300",tpl:"官方剩余 {plan_left}"}]},
               {kind:"custom",modules:[{type:"text",text:"QUEUE-B",size:8}]},
               {kind:"custom",modules:[{type:"text",text:"QUEUE-C",size:8}]}
             ],lib:[]},
@@ -276,6 +279,9 @@ class WidgetWebViewTests: XCTestCase {
         try await Task.sleep(nanoseconds: 260_000_000)
         let firstText = try await evaluate(webView, "document.querySelector('.dshwv-text').textContent") as? String ?? ""
         XCTAssertTrue(firstText.contains("QUEUE-A"), "first click must show the first queue item")
+        XCTAssertTrue(firstText.contains("剩余 62%"), "Codex Auth quota placeholder must use the official remaining window")
+        XCTAssertTrue(firstText.contains("官方剩余 62%"), "Codex Auth plan placeholder must use the same official window")
+        XCTAssertFalse(firstText.contains("额度 --"), "Codex Auth must not fall back to the empty legacy quota source")
 
         func clickAndRead() async throws -> String {
             _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown(); window.__AIWhale.nativePointerUp(false)")
