@@ -148,7 +148,9 @@ class WidgetWebViewTests: XCTestCase {
             iframe: Boolean(document.querySelector('iframe')),
             mount: Boolean(document.querySelector('#upstreamEditorMount')),
             editor: Boolean(window.__AIWhaleEditorAPI && window.__AIWhaleEditorAPI.openBubbleEditor),
-            editorVisible: Boolean((function(){var e=document.querySelector('#upstreamEditorMount .dshwv-bubmask');return e && e.classList.contains("dshwv-editor-inline-overlay") && getComputedStyle(e).display !== "none"})()),
+            editorVisible: Boolean((function(){var e=document.querySelector('#upstreamEditorMount .dshwv-bubmask');return e && e.classList.contains("dshwv-editor-inline-overlay") && getComputedStyle(e).display !== "none"}())),
+            inlinePosition: Boolean((function(){var e=document.querySelector('#upstreamEditorMount .dshwv-bubmask');return e && getComputedStyle(e).position === "relative"}())),
+            mountPosition: getComputedStyle(document.querySelector("#upstreamEditorMount")).position,
             queueRows: document.querySelectorAll('#upstreamEditorMount .dshwv-bubrow').length
           })
         """) as? [String: Any] ?? [:]
@@ -157,6 +159,8 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertEqual(bubbles["mount"] as? Bool, true)
         XCTAssertEqual(bubbles["editor"] as? Bool, true)
         XCTAssertEqual(bubbles["editorVisible"] as? Bool, true)
+        XCTAssertEqual(bubbles["inlinePosition"] as? Bool, true, "bubble editor must stay in the Settings page flow")
+        XCTAssertEqual(bubbles["mountPosition"] as? String, "relative")
         XCTAssertGreaterThan(bubbles["queueRows"] as? Int ?? 0, 0)
 
         _ = try await evaluate(webView, "document.querySelector(\"#nav button[data-page='accounts']\").click()")
@@ -227,6 +231,69 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertLessThanOrEqual(result["nodes"] as? Int ?? 999, 4, "dynamic module nodes must be replaced, not accumulated")
         let visibleSteps = ["A", "B", "C"].filter { (result["text"] as? String ?? "").contains($0) }
         XCTAssertEqual(visibleSteps.count, 1, "only one current queue item may remain; text=\(result["text"] ?? "")")
+    }
+
+
+    func testPackagedWidgetNativeClickQueueAdvancesWithoutReset() async throws {
+        let resourceRoot = try makeResourceRoot()
+        let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: WKWebViewConfiguration())
+        let delegate = NavigationDelegate()
+        webView.navigationDelegate = delegate
+        let loaded = expectation(description: "ordered queue widget loaded")
+        delegate.onFinish = { loaded.fulfill() }
+        delegate.onFailure = { _ in
+            XCTFail("ordered queue widget failed")
+            loaded.fulfill()
+        }
+        webView.loadFileURL(html, allowingReadAccessTo: resourceRoot)
+        await fulfillment(of: [loaded], timeout: 10)
+        try await waitForJavaScript(webView)
+
+        _ = try await evaluate(webView, """
+          window.__AIWhale.update({
+            accounts:[{id:"codex",name:"Codex",provider:"codex",kind:"subscription",enabled:true,status:"ok",windows:[{id:"primary-300",label:"5 小时",remainPct:62,usedPct:38}]}],
+            bubble:{advanceOnClick:true},
+            bubbleConfig:{v:1,items:[
+              {kind:"custom",modules:[{type:"text",text:"QUEUE-A",size:8}]},
+              {kind:"custom",modules:[{type:"text",text:"QUEUE-B",size:8}]},
+              {kind:"custom",modules:[{type:"text",text:"QUEUE-C",size:8}]}
+            ],lib:[]},
+            bubbleRevision:"ordered-queue-v1"
+          })
+        """)
+
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown()")
+        let pressState = try await evaluate(webView, """
+          (function () {
+            var body = document.querySelector(".dshwv-body")
+            return {bounce: body.classList.contains("dshwv-press-bounce"), animation: getComputedStyle(body).animationName}
+          }())
+        """) as? [String: Any] ?? [:]
+        XCTAssertEqual(pressState["bounce"] as? Bool, true, "the first native press must start the q弹 animation")
+        XCTAssertEqual(pressState["animation"] as? String, "dshwv-press-q")
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
+        try await Task.sleep(nanoseconds: 260_000_000)
+        let firstText = try await evaluate(webView, "document.querySelector('.dshwv-text').textContent") as? String ?? ""
+        XCTAssertTrue(firstText.contains("QUEUE-A"), "first click must show the first queue item")
+
+        func clickAndRead() async throws -> String {
+            _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown(); window.__AIWhale.nativePointerUp(false)")
+            try await Task.sleep(nanoseconds: 260_000_000)
+            return try await evaluate(webView, "document.querySelector('.dshwv-text').textContent") as? String ?? ""
+        }
+
+        let secondText = try await clickAndRead()
+        XCTAssertTrue(secondText.contains("QUEUE-B"), "second native click must advance to the second item")
+        let thirdText = try await clickAndRead()
+        XCTAssertTrue(thirdText.contains("QUEUE-C"), "third native click must advance to the third item")
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown(); window.__AIWhale.nativePointerUp(false)")
+        try await Task.sleep(nanoseconds: 260_000_000)
+        let closed = try await evaluate(webView, "Boolean(document.querySelector('.dshwv-pop-open'))") as? Bool ?? true
+        XCTAssertFalse(closed, "the click after the last item must close the bubble")
+
+        let restartedText = try await clickAndRead()
+        XCTAssertTrue(restartedText.contains("QUEUE-A"), "the next click after close must start the queue at the first item")
     }
 
     func testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback() async throws {
@@ -515,6 +582,7 @@ class WidgetWebViewTests: XCTestCase {
 @MainActor
 final class BubbleNativeAcceptanceTests: WidgetWebViewTests {
     func testDefaultContinuousClicksAdvanceExactlyOnce() async throws {
+        try await testPackagedWidgetNativeClickQueueAdvancesWithoutReset()
         try await testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate()
     }
 
