@@ -84,9 +84,14 @@ final class WidgetWebViewTests: XCTestCase {
 
         private func evaluate(_ webView: WKWebView, functionName: String, arguments: [Any]) {
             let encoded = arguments.compactMap { value -> String? in
-                guard let data = try? JSONSerialization.data(withJSONObject: value),
-                      let json = String(data: data, encoding: .utf8) else { return nil }
-                return json
+                // NSJSONSerialization requires an array/object at the top
+                // level on this SDK. Wrap scalar bridge arguments and remove
+                // the wrapper so request IDs and HTTP status codes are valid
+                // JavaScript literals too.
+                guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+                      let json = String(data: data, encoding: .utf8),
+                      json.count >= 2 else { return nil }
+                return String(json.dropFirst().dropLast())
             }
             guard encoded.count == arguments.count else { return }
             webView.evaluateJavaScript("\(functionName)(\(encoded.joined(separator: ",")))", completionHandler: nil)
