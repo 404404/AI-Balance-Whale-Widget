@@ -98,6 +98,25 @@ final class WidgetWebViewTests: XCTestCase {
         }
     }
 
+    /// Models the native controller's bubbleLayout response: the WebView
+    /// reports its measured upstream SVG height, then AppKit expands the
+    /// window upward while keeping the whale at its bottom anchor.
+    private final class WidgetLayoutBridge: NSObject, WKScriptMessageHandler {
+        weak var webView: WKWebView?
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let body = message.body as? [String: Any],
+                  body["type"] as? String == "bubbleLayout",
+                  let webView else { return }
+            let visible = (body["visible"] as? NSNumber)?.boolValue ?? false
+            let scale = max(0.65, min(1.6, (body["scale"] as? NSNumber)?.doubleValue ?? 1.0))
+            let bubbleHeight = max(120, min(250, (body["height"] as? NSNumber)?.doubleValue ?? 178))
+            let baseHeight = visible ? 174.0 + 6.0 + bubbleHeight : 184.0
+            let height = baseHeight * scale
+            webView.evaluateJavaScript("window.__AIWhale && window.__AIWhale.setLayout({scale:\(scale),height:\(height)})", completionHandler: nil)
+        }
+    }
+
     func testPackagedSettingsMountsUpstreamEditorDirectly() async throws {
         let resourceRoot = try makeResourceRoot()
         let settings = resourceRoot.appendingPathComponent("Settings.html")
@@ -179,7 +198,11 @@ final class WidgetWebViewTests: XCTestCase {
     func testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate() async throws {
         let resourceRoot = try makeResourceRoot()
         let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: WKWebViewConfiguration())
+        let configuration = WKWebViewConfiguration()
+        let layoutBridge = WidgetLayoutBridge()
+        configuration.userContentController.add(layoutBridge, name: "bridge")
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: configuration)
+        layoutBridge.webView = webView
         let delegate = NavigationDelegate()
         webView.navigationDelegate = delegate
         let loaded = expectation(description: "continuous widget loaded")
@@ -223,7 +246,8 @@ final class WidgetWebViewTests: XCTestCase {
         """) as? [String: Any] ?? [:]
         XCTAssertEqual(result["visible"] as? Bool, true, "the fiftieth native click must still leave the active queue responsive")
         XCTAssertLessThanOrEqual(result["nodes"] as? Int ?? 999, 4, "dynamic module nodes must be replaced, not accumulated")
-        XCTAssertTrue(["A", "B", "C"].contains(result["text"] as? String ?? ""), "only the current queue item may remain")
+        let visibleSteps = ["A", "B", "C"].filter { (result["text"] as? String ?? "").contains($0) }
+        XCTAssertEqual(visibleSteps.count, 1, "only one current queue item may remain; text=\(result["text"] ?? "")")
     }
 
     func testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback() async throws {
@@ -231,10 +255,14 @@ final class WidgetWebViewTests: XCTestCase {
         let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
         XCTAssertTrue(FileManager.default.fileExists(atPath: html.path), "missing WhaleWidget.html at \(html.path)")
 
+        let configuration = WKWebViewConfiguration()
+        let layoutBridge = WidgetLayoutBridge()
+        configuration.userContentController.add(layoutBridge, name: "bridge")
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 420, height: 420),
-            configuration: WKWebViewConfiguration()
+            configuration: configuration
         )
+        layoutBridge.webView = webView
         let delegate = NavigationDelegate()
         webView.navigationDelegate = delegate
         let loaded = expectation(description: "WhaleWidget.html loaded")
@@ -283,9 +311,10 @@ final class WidgetWebViewTests: XCTestCase {
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 180_000_000)
         let expanded = try await widgetMetrics(webView)
-        assertVisible(expanded, expectedHeight: 184, label: "expanded bubble")
+        assertWhaleVisible(expanded, label: "expanded bubble")
         XCTAssertEqual(expanded["bubbleVisible"] as? Bool, true)
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
+        assertBubbleAboveWhale(expanded, label: "expanded bubble")
         XCTAssertTrue((expanded["bubbleText"] as? String ?? "").contains("额度总览"), "settings dashboard step must render on the click bubble")
         XCTAssertEqual(expanded["menuHidden"] as? Bool, false)
         XCTAssertEqual(expanded["menuPinned"] as? Bool, true)
@@ -302,11 +331,21 @@ final class WidgetWebViewTests: XCTestCase {
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 100_000_000)
         let collapsed = try await widgetMetrics(webView)
-        assertVisible(collapsed, expectedHeight: 184, label: "collapsed bubble")
+        assertWhaleVisible(collapsed, label: "next bubble after click")
         // The native click path follows the upstream again-click queue. It may
         // advance to the next bubble instead of forcibly hiding the current one.
         XCTAssertEqual(collapsed["bubbleVisible"] as? Bool, true)
+        assertBubbleAboveWhale(collapsed, label: "next bubble after click")
         print("WHALE_WEBKIT_GEOMETRY collapsed app=\(rect(collapsed, "app")) whale=\(rect(collapsed, "whale"))")
+
+        for scale in [0.65, 1.0, 1.6] {
+            _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:\(scale),height:\((174 + 6 + 178) * scale)})")
+            try await Task.sleep(nanoseconds: 100_000_000)
+            let scaledExpanded = try await widgetMetrics(webView)
+            assertWhaleVisible(scaledExpanded, label: "expanded scale \(scale)")
+            XCTAssertEqual(scaledExpanded["bubbleVisible"] as? Bool, true)
+            assertBubbleAboveWhale(scaledExpanded, label: "expanded scale \(scale)")
+        }
 
         _ = try await evaluate(webView, """
           window.__AIWhale.update({
@@ -384,6 +423,11 @@ final class WidgetWebViewTests: XCTestCase {
     private func assertVisible(_ metrics: [String: Any], expectedHeight: Double, label: String) {
         XCTAssertGreaterThan(rectValue(metrics, "app", "height"), 0, label)
         XCTAssertEqual(rectValue(metrics, "app", "height"), expectedHeight, accuracy: 1.5, label)
+        assertWhaleVisible(metrics, label: label)
+    }
+
+    private func assertWhaleVisible(_ metrics: [String: Any], label: String) {
+        XCTAssertGreaterThan(rectValue(metrics, "app", "height"), 0, label)
         let app = metrics["app"] as? [String: Any] ?? [:]
         let whale = metrics["whale"] as? [String: Any] ?? [:]
         XCTAssertGreaterThan(rectValue(metrics, "whale", "width"), 0, label)
@@ -398,6 +442,14 @@ final class WidgetWebViewTests: XCTestCase {
         XCTAssertEqual(metrics["imageDisplay"] as? String, "block", label)
         XCTAssertEqual(metrics["ancestorsVisible"] as? Bool, true, label)
         XCTAssertTrue((metrics["computedHeight"] as? String ?? "").hasSuffix("px"), label)
+    }
+
+    private func assertBubbleAboveWhale(_ metrics: [String: Any], label: String) {
+        let app = metrics["app"] as? [String: Any] ?? [:]
+        let bubble = metrics["bubble"] as? [String: Any] ?? [:]
+        let whale = metrics["whale"] as? [String: Any] ?? [:]
+        XCTAssertGreaterThanOrEqual(bubble["minY"] as? Double ?? -1, app["minY"] as? Double ?? 0, label)
+        XCTAssertLessThanOrEqual(bubble["maxY"] as? Double ?? .greatestFiniteMagnitude, whale["minY"] as? Double ?? -1, label)
     }
 
     private func rect(_ metrics: [String: Any], _ key: String) -> String {
