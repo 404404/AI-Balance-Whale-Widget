@@ -245,8 +245,9 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         case "restoreDisplay":
             restoreDisplay()
         case "bubbleLayout":
-            let visible = (body["visible"] as? NSNumber)?.boolValue ?? bubbleVisible
-            let requestedHeight = CGFloat((body["height"] as? NSNumber)?.doubleValue ?? Double(bubbleHeight))
+            let visible = (body["visible"] as? Bool) ?? (body["visible"] as? NSNumber)?.boolValue ?? bubbleVisible
+            let rawHeight = (body["height"] as? Double) ?? (body["height"] as? NSNumber)?.doubleValue ?? Double(bubbleHeight)
+            let requestedHeight = CGFloat(rawHeight)
             let changed = visible != bubbleVisible || abs(requestedHeight - bubbleHeight) > 0.5
             bubbleVisible = visible
             bubbleHeight = min(max(requestedHeight, 120), WhaleLayout.maximumBubbleHeight)

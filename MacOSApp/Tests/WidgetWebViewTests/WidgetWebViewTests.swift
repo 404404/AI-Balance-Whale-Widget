@@ -108,9 +108,11 @@ final class WidgetWebViewTests: XCTestCase {
             guard let body = message.body as? [String: Any],
                   body["type"] as? String == "bubbleLayout",
                   let webView else { return }
-            let visible = (body["visible"] as? NSNumber)?.boolValue ?? false
-            let scale = max(0.65, min(1.6, (body["scale"] as? NSNumber)?.doubleValue ?? 1.0))
-            let bubbleHeight = max(120, min(250, (body["height"] as? NSNumber)?.doubleValue ?? 178))
+            let visible = (body["visible"] as? Bool) ?? (body["visible"] as? NSNumber)?.boolValue ?? false
+            let rawScale = (body["scale"] as? Double) ?? (body["scale"] as? NSNumber)?.doubleValue ?? 1.0
+            let rawBubbleHeight = (body["height"] as? Double) ?? (body["height"] as? NSNumber)?.doubleValue ?? 178
+            let scale = max(0.65, min(1.6, rawScale))
+            let bubbleHeight = max(120, min(250, rawBubbleHeight))
             let baseHeight = visible ? 174.0 + 6.0 + bubbleHeight : 184.0
             let height = baseHeight * scale
             webView.evaluateJavaScript("window.__AIWhale && window.__AIWhale.setLayout({scale:\(scale),height:\(height)})", completionHandler: nil)
