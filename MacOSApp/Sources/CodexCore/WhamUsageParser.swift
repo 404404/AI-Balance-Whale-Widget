@@ -1,8 +1,8 @@
 import Foundation
 
 /// Adapter for the read-only ChatGPT WHAM usage response used by the official
-/// Codex client. This deliberately stays separate from the app-server parser:
-/// WHAM uses snake_case fields and seconds, while app-server uses camelCase
+/// Codex client. This deliberately stays separate from the legacy process parser:
+/// WHAM uses snake_case fields and seconds, while legacy process uses camelCase
 /// fields and minutes.
 public enum WhamUsageParser {
     public static func parse(_ object: [String: Any], now: Date = Date()) -> ParsedRateLimits {

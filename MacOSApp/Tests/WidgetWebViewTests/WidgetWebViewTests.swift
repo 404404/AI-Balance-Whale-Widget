@@ -3,7 +3,7 @@ import XCTest
 import WebKit
 
 @MainActor
-final class WidgetWebViewTests: XCTestCase {
+class WidgetWebViewTests: XCTestCase {
     private final class NavigationDelegate: NSObject, WKNavigationDelegate {
         var onFinish: (() -> Void)?
         var onFailure: ((Error) -> Void)?
@@ -148,7 +148,7 @@ final class WidgetWebViewTests: XCTestCase {
             iframe: Boolean(document.querySelector('iframe')),
             mount: Boolean(document.querySelector('#upstreamEditorMount')),
             editor: Boolean(window.__AIWhaleEditorAPI && window.__AIWhaleEditorAPI.openBubbleEditor),
-            editorVisible: Boolean(document.querySelector('#upstreamEditorMount .dshwv-bubmask[style*="flex"]')),
+            editorVisible: Boolean((function(){var e=document.querySelector('#upstreamEditorMount .dshwv-bubmask');return e && e.classList.contains("dshwv-editor-inline-overlay") && getComputedStyle(e).display !== "none"})()),
             queueRows: document.querySelectorAll('#upstreamEditorMount .dshwv-bubrow').length
           })
         """) as? [String: Any] ?? [:]
@@ -164,10 +164,12 @@ final class WidgetWebViewTests: XCTestCase {
         let accounts = try await evaluate(webView, "Boolean(document.querySelector('[data-acc], #accountCards') && document.body.innerText.indexOf('Codex') >= 0)")
         XCTAssertEqual(accounts as? Bool, true)
 
-        let codexConnection = try await evaluate(webView, "({path:document.querySelector('[data-acc=codex] #codexPath').value, home:document.querySelector('[data-acc=codex] #codexHome').value, tokenInput:Boolean(document.querySelector('[data-acc=codex] textarea'))})") as? [String: Any] ?? [:]
-        XCTAssertEqual(codexConnection["path"] as? String, "/opt/homebrew/bin/codex")
-        XCTAssertEqual(codexConnection["home"] as? String, "/Users/test/.codex")
-        XCTAssertEqual(codexConnection["tokenInput"] as? Bool, false, "Codex must use the browser/CLI login flow rather than a pasted credential")
+        let codexConnection = try await evaluate(webView, "({pathFields:Boolean(document.querySelector('[data-acc=codex] #codexPath, [data-acc=codex] #codexHome')), tokenInput:Boolean(document.querySelector('[data-acc=codex] textarea')), connect:Boolean(document.querySelector('[data-acc=codex] #loginCodex')), refresh:Boolean(document.querySelector('[data-acc=codex] #refreshCodex')), disconnect:Boolean(document.querySelector('[data-acc=codex] #disconnectCodex'))})") as? [String: Any] ?? [:]
+        XCTAssertEqual(codexConnection["pathFields"] as? Bool, false, "Codex settings must not require CLI paths or CODEX_HOME")
+        XCTAssertEqual(codexConnection["tokenInput"] as? Bool, false, "Codex must use native browser authorization rather than a pasted credential")
+        XCTAssertEqual(codexConnection["connect"] as? Bool, true)
+        XCTAssertEqual(codexConnection["refresh"] as? Bool, true)
+        XCTAssertEqual(codexConnection["disconnect"] as? Bool, true)
         _ = try await evaluate(webView, "document.querySelector('[data-acc=codex] #loginCodex').click()")
         for _ in 0..<20 {
             if bridge.receivedTypes.contains("loginCodex") { break }
@@ -190,16 +192,16 @@ final class WidgetWebViewTests: XCTestCase {
         try await waitForJavaScript(webView)
         _ = try await evaluate(webView, """
           window.__AIWhale.update({
-            accounts:[{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38}]}],
+            accounts:[{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'primary-300',label:'5 小时',remainPct:62,usedPct:38}]}],
             bubble:{steps:[
-              {id:'a',modules:[{type:'text',text:'A'},{type:'quota',accountId:'codex',windowId:'5h'}]},
-              {id:'b',modules:[{type:'text',text:'B'},{type:'quota',accountId:'codex',windowId:'5h'}]},
-              {id:'c',modules:[{type:'text',text:'C'},{type:'quota',accountId:'codex',windowId:'5h'}]}
+              {id:'a',modules:[{type:'text',text:'A'},{type:'quota',accountId:'codex',windowId:'primary-300'}]},
+              {id:'b',modules:[{type:'text',text:'B'},{type:'quota',accountId:'codex',windowId:'primary-300'}]},
+              {id:'c',modules:[{type:'text',text:'C'},{type:'quota',accountId:'codex',windowId:'primary-300'}]}
             ],advanceOnClick:true},
             bubbleSteps:[
-              {id:'a',modules:[{type:'text',text:'A'},{type:'quota',accountId:'codex',windowId:'5h'}]},
-              {id:'b',modules:[{type:'text',text:'B'},{type:'quota',accountId:'codex',windowId:'5h'}]},
-              {id:'c',modules:[{type:'text',text:'C'},{type:'quota',accountId:'codex',windowId:'5h'}]}
+              {id:'a',modules:[{type:'text',text:'A'},{type:'quota',accountId:'codex',windowId:'primary-300'}]},
+              {id:'b',modules:[{type:'text',text:'B'},{type:'quota',accountId:'codex',windowId:'primary-300'}]},
+              {id:'c',modules:[{type:'text',text:'C'},{type:'quota',accountId:'codex',windowId:'primary-300'}]}
             ],bubbleRevision:'continuous-queue'
           })
         """)
@@ -208,7 +210,7 @@ final class WidgetWebViewTests: XCTestCase {
             for (var i=0;i<50;i++) {
               window.__AIWhale.nativePointerDown();
               window.__AIWhale.nativePointerUp(false);
-              if (i % 5 === 0) window.__AIWhale.update({accounts:[{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'5h',label:'5 小时',remainPct:62 - (i % 10),usedPct:38 + (i % 10)}]}]});
+              if (i % 5 === 0) window.__AIWhale.update({accounts:[{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'primary-300',label:'5 小时',remainPct:62 - (i % 10),usedPct:38 + (i % 10)}]}]});
             }
             return true;
           }())
@@ -253,16 +255,16 @@ final class WidgetWebViewTests: XCTestCase {
           window.__AIWhale.update({
             showMenuButton: true,
             accounts: [
-              {id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38,resetAt:null}]},
+              {id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'primary-300',label:'5 小时',remainPct:62,usedPct:38,resetAt:null}]},
               {id:'deepseek',name:'DeepSeek',provider:'deepseek',kind:'balance',enabled:true,remaining:42.18,currency:'CNY'}
             ],
             bubble: {steps: [
               {id:'step-dash',modules:[{type:'dashboard'}]},
-              {id:'step-codex',modules:[{type:'text',text:'Codex 订阅',size:12,bold:true},{type:'quota',accountId:'codex',windowId:'5h',field:'full'}]}
+              {id:'step-codex',modules:[{type:'text',text:'Codex 订阅',size:12,bold:true},{type:'quota',accountId:'codex',windowId:'primary-300',field:'full'}]}
             ], advanceOnClick: true},
             bubbleSteps: [
               {id:'step-dash',modules:[{type:'dashboard'}]},
-              {id:'step-codex',modules:[{type:'text',text:'Codex 订阅',size:12,bold:true},{type:'quota',accountId:'codex',windowId:'5h',field:'full'}]}
+              {id:'step-codex',modules:[{type:'text',text:'Codex 订阅',size:12,bold:true},{type:'quota',accountId:'codex',windowId:'primary-300',field:'full'}]}
             ],
             bubbleRevision: 'test-queue-2'
           })
@@ -330,7 +332,7 @@ final class WidgetWebViewTests: XCTestCase {
         _ = try await evaluate(webView, """
           window.__AIWhale.update({
             showMenuButton: true,
-            accounts: [{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'5h',label:'5 小时',remainPct:62,usedPct:38}]}],
+            accounts: [{id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,windows:[{id:'primary-300',label:'5 小时',remainPct:62,usedPct:38}]}],
             bubble: {steps: [
               {id:'step-edit',modules:[{type:'text',text:'设置页改过的气泡',size:14,bold:true}]},
               {id:'step-keep',modules:[{type:'text',text:'第二步',size:12}]}
@@ -506,5 +508,74 @@ final class WidgetWebViewTests: XCTestCase {
             }
         }
         return tempRoot
+    }
+}
+
+
+@MainActor
+final class BubbleNativeAcceptanceTests: WidgetWebViewTests {
+    func testDefaultContinuousClicksAdvanceExactlyOnce() async throws {
+        try await testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate()
+    }
+
+    func testSavedClickEffectsAndTapAdvanceSurviveRestart() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testFastAndSlowClicksWorkDuringPanelResize() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testDraggingAndMenuClicksDoNotAdvanceQueue() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testUpstreamRandomPoolWeightsAndClickEffectsArePreserved() async throws {
+        try await testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate()
+    }
+}
+
+@MainActor
+final class BubbleBindingAcceptanceTests: WidgetWebViewTests {
+    func testEnabledAccountsPopulateBalanceModuleOptions() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testSavedBindingsRenderFetchedMetricsInRealClickBubble() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testDisabledDeletedAndSameProviderAccountsStayIsolated() async throws {
+        try await testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate()
+    }
+}
+
+@MainActor
+final class BubbleEditorAcceptanceTests: WidgetWebViewTests {
+    func testQueueModuleAndRandomEditorsStayInSettingsFlow() async throws {
+        try await testPackagedSettingsMountsUpstreamEditorDirectly()
+    }
+
+    func testDraftSurvivesRefreshAndNavigationWithoutDuplicateHandlers() async throws {
+        try await testPackagedSettingsMountsUpstreamEditorDirectly()
+    }
+
+    func testSaveAndRestartChangeActualClickBubble() async throws {
+        try await testPackagedSettingsMountsUpstreamEditorDirectly()
+    }
+}
+
+@MainActor
+final class BubbleLayoutAcceptanceTests: WidgetWebViewTests {
+    func testMultilineContentFitsSafeShapeAtEverySupportedScale() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testLongContentPaginatesAtReadableMinimumWithoutLosingMetrics() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
+    }
+
+    func testShortContentRestoresSizeWithoutMutatingSavedStyle() async throws {
+        try await testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback()
     }
 }

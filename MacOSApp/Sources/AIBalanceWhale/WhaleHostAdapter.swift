@@ -32,7 +32,7 @@ final class WhaleHostAdapter {
                     "v": next["v"] ?? 1,
                     "items": items,
                     "lib": next["lib"] as? [[String: Any]] ?? [],
-                    "tapAdvance": next["tapAdvance"] as? Bool ?? false,
+                    "tapAdvance": next["tapAdvance"] as? Bool ?? true,
                 ]
                 if let close = next["closeAfterSeconds"] { canonical["closeAfterSeconds"] = close }
                 let saved = WhaleConfigurationStore.shared.savePatch(["bubble": canonical, "bubbleCustomized": true])
@@ -161,7 +161,7 @@ final class WhaleHostAdapter {
                 "v": bubble["v"] ?? 1,
                 "items": items,
                 "lib": bubble["lib"] as? [[String: Any]] ?? [],
-                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? false),
+                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? true),
                 "accounts": WhaleConfigurationStore.shared.publicAccounts(),
             ]
             if let close = bubble["closeAfterSeconds"] { result["closeAfterSeconds"] = close }
@@ -176,7 +176,7 @@ final class WhaleHostAdapter {
             "accounts": WhaleConfigurationStore.shared.publicAccounts(),
             "items": items,
             "lib": [],
-            "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? false)
+            "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? true)
         ]
     }
 
@@ -286,24 +286,26 @@ final class WhaleHostAdapter {
 
     private func apiModelsPayload() -> [String: Any] {
         let state = ownerState()
-        let windows: [[String: Any]] = state.buckets.map { bucket in
+        let snapshots = AccountCatalog.windows(from: state.buckets)
+        let windows: [[String: Any]] = snapshots.map { window in
             [
-                "key": bucket.id + "-" + bucket.window.rawValue,
-                "label": bucket.windowName,
-                "usedPct": bucket.usedPercent.map { NSNumber(value: $0) } ?? NSNull(),
-                "resetAt": bucket.resetsAt.map { NSNumber(value: $0.timeIntervalSince1970 * 1000) } ?? NSNull(),
-                "windowMinutes": bucket.windowDurationMinutes.map { NSNumber(value: $0) } ?? NSNull()
+                "key": window.id,
+                "id": window.id,
+                "label": window.label,
+                "usedPct": window.usedPct,
+                "remainPct": window.remainPct,
+                "resetAt": window.resetAt.map { NSNumber(value: $0) } ?? NSNull()
             ]
         }
         let plan: [String: Any] = state.status == .ready || state.status == .stale
             ? ["ok": true, "windows": windows, "level": state.planType ?? NSNull()]
             : ["ok": false, "error": state.message, "hide": false]
         let model: [String: Any] = [
-            "id": "codex", "name": "Codex（ChatGPT 订阅）", "provider": "codex",
-            "builtin": true, "currency": "CNY", "balance": NSNull(), "todayUsage": NSNull(),
-            "balanceMode": "events", "usageSource": "official-subscription",
-            "planSupport": true, "plan": plan,
-            "codex": ["ok": false, "error": "官方订阅额度以窗口百分比为准；本机统计未接入"]
+            "id": "codex", "accountId": state.accountKey ?? "codex", "name": "Codex（ChatGPT 订阅）", "provider": "codex",
+            "builtin": true, "currency": NSNull(), "balance": NSNull(), "todayUsage": NSNull(),
+            "balanceMode": "subscription", "usageSource": "official-subscription",
+            "planSupport": true, "plan": plan, "windows": windows,
+            "codex": ["ok": true, "error": NSNull()]
         ]
         var templates = ProviderTemplates.all.map { item -> [String: Any] in
             var result = item
@@ -312,12 +314,12 @@ final class WhaleHostAdapter {
             }
             if (result["id"] as? String) == "codex" {
                 result["builtin"] = true
-                result["quota"] = ["json": ["windows": [["key": "primary"], ["key": "secondary"]]]]
+                result["quota"] = ["json": ["windows": windows.map { ["key": $0["id"] as? String ?? ""] }]]
             }
             return result
         }
         if !templates.contains(where: { ($0["id"] as? String) == "codex" }) {
-            templates.append(["id": "codex", "name": "Codex（ChatGPT 订阅）", "quota": ["json": ["windows": [["key": "primary"], ["key": "secondary"]]]]])
+            templates.append(["id": "codex", "name": "Codex（ChatGPT 订阅）", "quota": ["json": ["windows": windows.map { ["key": $0["id"] ?? ""] }]]])
         }
         var models: [[String: Any]] = [model]
         var balanceByID: [String: [String: Any]] = [:]
@@ -521,7 +523,7 @@ final class WhaleHostAdapter {
         if id == "codex" {
             let state = ownerState()
             return state.status == .ready || state.status == .stale
-                ? ["ok": true, "detail": "Codex app-server 已返回账号状态"]
+                ? ["ok": true, "detail": "App 自有授权已返回账号状态"]
                 : ["ok": false, "error": state.message]
         }
         if let item = externalBalances().first(where: { ($0["id"] as? String) == id }) {

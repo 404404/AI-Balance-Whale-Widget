@@ -5,8 +5,6 @@ final class AppPreferences {
 
     private let defaults = UserDefaults.standard
     private enum Key {
-        static let codexPath = "codexExecutablePath"
-        static let codexHome = "codexHome"
         static let scale = "whaleScale"
         static let sound = "soundEnabled"
         static let mousePassthrough = "mousePassthrough"
@@ -18,16 +16,6 @@ final class AppPreferences {
         static let snapEnabled = "snapEnabled"
         static let showMenuButton = "showMenuButton"
         static let bubbleCloseAfterSeconds = "bubbleCloseAfterSeconds"
-    }
-
-    var codexPath: String {
-        get { defaults.string(forKey: Key.codexPath) ?? "" }
-        set { defaults.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Key.codexPath) }
-    }
-
-    var codexHome: String {
-        get { defaults.string(forKey: Key.codexHome) ?? "" }
-        set { defaults.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Key.codexHome) }
     }
 
     var scale: Double {

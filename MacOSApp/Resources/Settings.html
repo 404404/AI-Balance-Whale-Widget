@@ -191,8 +191,13 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
     return '<div class="card" data-acc="' + esc(a.id) + '"><h3 style="margin:0 0 6px">' + esc(a.name) + '</h3><p class="note">' + esc(info.help) + '</p><div class="grid"><label class="check"><input class="en" type="checkbox" ' + (a.enabled !== false ? "checked" : "") + '>启用</label><label class="check"><input class="tok" type="checkbox" ' + (liveChecked ? "checked" : "") + (a.provider === "codex" ? " disabled" : "") + '>' + liveLabel + '</label></div>' + token + conn + '<div class="actions"><button class="primary refresh">刷新额度</button>' + (core ? "" : '<button class="danger del">删除</button>') + '</div><p class="note">' + esc(a.message || "") + (a.hasToken ? " · Keychain 已保存" : "") + "</p>" + balance + "</div>";
   }
   function codexCard() {
-    var c = (m.app && m.app.connection) || {};
-    return '<div class="status" style="margin-top:8px">' + esc(c.message || "未测试") + '<br>连接状态：' + esc(c.status || "idle") + (c.account ? " · " + esc(c.account) : "") + (c.version ? " · CLI " + esc(c.version) : "") + '</div><div class="field"><label>codex 可执行文件</label><input id="codexPath" value="' + esc(c.resolvedPath || c.path || "") + '"></div><div class="actions"><button class="secondary" id="redetect">重新检测</button><button class="secondary" id="chooseCodex">选择可执行文件…</button><button class="primary" id="loginCodex">在浏览器中登录</button><button class="secondary" id="disconnectCodex">断开本 App 连接</button></div><div class="field"><label>CODEX_HOME</label><input id="codexHome" value="' + esc(c.effectiveHome || c.home || "") + '"></div><div class="actions"><button class="secondary" id="chooseHome">选择 CODEX_HOME…</button><button class="secondary" id="saveConn">保存连接</button><button class="secondary" id="testConn">测试并刷新</button></div><p class="note">Codex 登录由官方 CLI 在系统浏览器中完成，回调和凭据由 Codex 管理；本页面不要求粘贴 session、Cookie 或 token。额度通过 app-server/官方登录状态读取。断开只停止本 App 的读取，不会注销 CLI。</p>';
+    var c = (m.app && m.app.connection) || {}, ready = c.status === "ready";
+    var buckets = (c.buckets || []).map(function (b) {
+      return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(b.label || "额度窗口") + '</span><span class="mono">剩余 ' + remainLabel(b.remainingPct) + '</span></div><div class="meter"><i style="width:' + (Number.isFinite(Number(b.remainingPct)) ? Number(b.remainingPct) : 0) + '%"></i></div></div>';
+    }).join("");
+    var identity = c.email || c.accountID || "未连接账户";
+    var details = ready ? (' · ' + esc(identity) + (c.plan ? ' · ' + esc(c.plan) : '') + (c.lastUpdated ? ' · 更新于 ' + esc(new Date(c.lastUpdated).toLocaleString()) : '')) : '';
+    return '<div class="status" style="margin-top:8px">' + esc(c.message || "请连接 ChatGPT/Codex") + '<br>连接状态：' + esc(c.status || "notLoggedIn") + details + '</div><div class="actions"><button class="primary" id="loginCodex">' + (ready ? '重新登录' : '连接账户') + '</button><button class="secondary" id="refreshCodex">刷新额度</button><button class="secondary" id="disconnectCodex">断开本 App 连接</button></div>' + (buckets ? '<div class="field"><label>订阅额度窗口</label>' + buckets + '</div>' : '') + '<p class="note">使用 AI Balance Whale 自己的官方浏览器授权与 Keychain 凭据。网页只接收脱敏身份和额度；断开只删除本 App 凭据，不会注销其它客户端登录。</p>';
   }
   function bindAccountCard(a) {
     var root = document.querySelector('[data-acc="' + a.id + '"]');
@@ -205,15 +210,9 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
     var del = root.querySelector(".del");
     if (del) del.onclick = function () { post("removeAccount", { id: a.id }); };
     if (a.provider === "codex") {
-      var auto = ((m.app.connection || {}).pathSource !== "manual");
-      function payload() { return { path: val("codexPath"), home: val("codexHome"), pathMode: auto ? "auto" : "manual" }; }
-      var s = document.getElementById("saveConn"); if (s) s.onclick = function () { post("saveConnection", payload()); say("连接设置已保存"); };
-      var t = document.getElementById("testConn"); if (t) t.onclick = function () { post("testConnection", payload()); post("refreshAccounts", { accountId: "codex" }); };
-      var r = document.getElementById("redetect"); if (r) r.onclick = function () { post("redetectConnection"); };
-      var c = document.getElementById("chooseCodex"); if (c) c.onclick = function () { post("chooseCodex"); };
-      var login = document.getElementById("loginCodex"); if (login) login.onclick = function () { post("loginCodex"); say("已启动 Codex 浏览器登录，请在浏览器完成授权"); };
-      var disconnect = document.getElementById("disconnectCodex"); if (disconnect) disconnect.onclick = function () { post("disconnectCodex"); say("已断开本 App 连接，未注销 Codex CLI"); };
-      var h = document.getElementById("chooseHome"); if (h) h.onclick = function () { post("chooseCodexHome"); };
+      var login = document.getElementById("loginCodex"); if (login) login.onclick = function () { post("loginCodex"); say("已打开官方登录页面，请完成授权后返回本应用"); };
+      var refresh = document.getElementById("refreshCodex"); if (refresh) refresh.onclick = function () { post("refreshCodex"); say("正在刷新 Codex 额度"); };
+      var disconnect = document.getElementById("disconnectCodex"); if (disconnect) disconnect.onclick = function () { post("disconnectCodex"); say("已断开本 App 授权"); };
     }
   }
 

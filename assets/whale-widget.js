@@ -595,6 +595,30 @@ document.head.appendChild(styleEl)
 var root = document.createElement('div')
 root.className = 'dshwv-root'
 var editorMount = window.__AIWhaleEditorMount || null
+function editorIsEmbedded() {
+  return !!(window.__AIWhaleEditorMode && (window.__AIWhaleEditorMount || editorMount))
+}
+function showEditorOverlay(overlay) {
+  if (!overlay) return
+  if (editorIsEmbedded()) {
+    var host = document.getElementById('upstreamEditorMount') || window.__AIWhaleEditorMount || editorMount
+    if (host && overlay.parentNode !== host) host.appendChild(overlay)
+    overlay.classList.add('dshwv-editor-inline-overlay')
+    overlay.style.position = 'absolute'
+    overlay.style.inset = '0'
+    overlay.style.background = 'transparent'
+    overlay.style.zIndex = '1'
+    overlay.style.alignItems = 'flex-start'
+    overlay.style.justifyContent = 'flex-start'
+    overlay.style.overflow = 'visible'
+    overlay.style.display = 'block'
+  } else {
+    overlay.style.display = 'flex'
+  }
+}
+function hideEditorOverlay(overlay) {
+  if (overlay) overlay.style.display = 'none'
+}
 
 var img = document.createElement('img')
 img.className = 'dshwv-img'
@@ -6660,7 +6684,7 @@ function openBubbleEditor() {
     }
     bubbleEditorSnap = JSON.stringify([bubbleEditItems, bubbleLib, bubbleTapAdvChk.checked]) // v727：含开关，改开关也算"有改动"
     renderBubbleEditor()
-    bubbleMask.style.display = 'flex'
+    showEditorOverlay(bubbleMask)
   } catch (err) {
     try { window.__AIWhaleEditorOpenError = String(err && err.message ? err.message : err) } catch (ignored) {}
   }
@@ -6756,7 +6780,7 @@ function openBubbleItem(idx, side) {
     bubbleItemTitleEl.textContent = '编辑 ' + bubbleEditStepLabel(step, idx) + '内容(可拖动下方模块入框)'
     renderBubbleItemSideSwitch(step)
     // 先显示弹窗再渲染预览:getBBox 需要可见布局,否则测到 0 导致内容错位到角落
-    bubbleItemMask.style.display = 'flex'
+    showEditorOverlay(bubbleItemMask)
     renderBubblePal()
     renderBubblePv()
   } catch (err) {}
@@ -9324,7 +9348,7 @@ function openModuleNamePrompt(m) {
   try {
     moduleNamePromptModule = m || moduleEditRef || null
     moduleNameInput.value = ''
-    moduleNamePromptMask.style.display = 'flex'
+    showEditorOverlay(moduleNamePromptMask)
     setTimeout(function () { try { moduleNameInput.focus() } catch (err) {} }, 30)
   } catch (err) {}
 }
@@ -9347,7 +9371,7 @@ function openModuleEditor(m, onSave, isNew) {
     moduleOnSave = onSave || null
     moduleEditNew = !!isNew
     renderModuleEditor()
-    moduleMask.style.display = 'flex'
+    showEditorOverlay(moduleMask)
   } catch (err) {}
 }
 function closeModuleEditor(saved) {
@@ -10129,7 +10153,8 @@ function whaleNowdexAccounts() {
   return Array.isArray(incoming.accounts) ? incoming.accounts : []
 }
 function whaleRemainLabel(pct) {
-  return Math.max(0, Math.min(100, Math.round(Number(pct) || 0))) + '%'
+  var n = Number(pct)
+  return isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) + '%' : '—'
 }
 function whaleFormatReset(ms) {
   if (!ms) return '—'
@@ -10142,7 +10167,8 @@ function whaleFormatReset(ms) {
   return Math.floor(h / 24) + ' 天后'
 }
 function whaleMoney(a) {
-  return ((a && a.currency === 'CNY') ? '¥' : '$') + Number((a && a.remaining) || 0).toFixed(2)
+  var n = Number(a && a.remaining)
+  return isFinite(n) ? ((a && a.currency === 'CNY') ? '¥' : '$') + n.toFixed(2) : '—'
 }
 function stepsToBubbleCfg(steps) {
   var items = []
@@ -10162,7 +10188,7 @@ function stepsToBubbleCfg(steps) {
     })
     items.push({ kind: 'custom', id: steps[i].id, modules: mods })
   }
-  return { v: 2, items: items, lib: [], tapAdvance: false }
+  return { v: 2, items: items, lib: [], tapAdvance: true }
 }
 function whaleMeterEl(remain) {
   var wrap = document.createElement('div')
@@ -10172,109 +10198,23 @@ function whaleMeterEl(remain) {
   wrap.appendChild(i)
   return wrap
 }
-function renderNowdexModule(parentEl, m) {
-  if (!window.__AIWhaleStandalone || !m) return false
-  var accs = whaleNowdexAccounts()
-  if (m.type === 'dashboard') {
-    var box = document.createElement('div')
-    box.className = 'dshwv-nowdex'
-    var title = document.createElement('div')
-    title.style.fontWeight = '650'
-    title.style.marginBottom = '4px'
-    title.textContent = '额度总览'
-    box.appendChild(title)
-    var rows = accs.filter(function (a) { return a && a.enabled !== false })
-    if (!rows.length) {
-      var empty = document.createElement('div')
-      empty.textContent = '没有启用的账户'
-      box.appendChild(empty)
-    }
-    rows.forEach(function (a) {
-      var row = document.createElement('div')
-      row.style.marginTop = '6px'
-      var line = document.createElement('div')
-      line.style.display = 'flex'
-      line.style.justifyContent = 'space-between'
-      line.style.fontSize = '12px'
-      var name = document.createElement('span')
-      name.textContent = a.name || a.id
-      var val = document.createElement('span')
-      var w = (a.windows || [])[0] || {}
-      val.textContent = a.kind === 'balance' ? whaleMoney(a) : whaleRemainLabel(w.remainPct)
-      line.appendChild(name)
-      line.appendChild(val)
-      row.appendChild(line)
-      var pct = a.kind === 'balance' ? Math.min(100, (Number(a.remaining || 0) / Math.max(1, Number(a.total || 50))) * 100) : Number(w.remainPct || 0)
-      row.appendChild(whaleMeterEl(pct))
-      box.appendChild(row)
-    })
-    parentEl.appendChild(box)
-    return true
-  }
-  if (m.type === 'quota') {
-    var acc = accs.filter(function (a) { return a.id === m.accountId })[0]
-    var w = acc && ((acc.windows || []).filter(function (x) { return x.id === m.windowId })[0] || acc.windows[0])
-    var box = document.createElement('div')
-    box.className = 'dshwv-nowdex'
-    if (!acc || !w) { box.textContent = '未配置该订阅'; parentEl.appendChild(box); return true }
-    if (m.field === 'remain') { box.textContent = whaleRemainLabel(w.remainPct); parentEl.appendChild(box); return true }
-    if (m.field === 'reset') { box.textContent = whaleFormatReset(w.resetAt); parentEl.appendChild(box); return true }
-    var line = document.createElement('div')
-    line.style.display = 'flex'
-    line.style.justifyContent = 'space-between'
-    line.style.fontSize = '12px'
-    var lab = document.createElement('span')
-    lab.textContent = w.label || ''
-    var val = document.createElement('span')
-    val.textContent = whaleRemainLabel(w.remainPct)
-    line.appendChild(lab)
-    line.appendChild(val)
-    box.appendChild(line)
-    box.appendChild(whaleMeterEl(w.remainPct))
-    var reset = document.createElement('div')
-    reset.style.fontSize = '10px'
-    reset.style.opacity = '.7'
-    reset.style.marginTop = '4px'
-    reset.textContent = whaleFormatReset(w.resetAt)
-    box.appendChild(reset)
-    parentEl.appendChild(box)
-    return true
-  }
-  if (m.type === 'balance') {
-    var acc = accs.filter(function (a) { return a.id === m.accountId })[0]
-    var box = document.createElement('div')
-    box.className = 'dshwv-nowdex'
-    if (!acc) { box.textContent = '未配置该余额账户'; parentEl.appendChild(box); return true }
-    var amount = document.createElement('div')
-    amount.style.fontSize = '22px'
-    amount.style.fontFamily = 'ui-monospace,monospace'
-    amount.textContent = whaleMoney(acc)
-    box.appendChild(amount)
-    var msg = document.createElement('div')
-    msg.style.fontSize = '11px'
-    msg.style.opacity = '.7'
-    msg.textContent = acc.message || ''
-    box.appendChild(msg)
-    parentEl.appendChild(box)
-    return true
-  }
-  return false
-}
 function bubbleReshowCurrent() {
   if (!bubbleShown || !bubbleRoundOn) return
-  var idx = Math.max(0, bubbleSeqIdx - 1)
-  var step = bubbleSeq[idx]
-  if (!step) return
-  var item = bubbleIsChoice(step) ? bubblePickChoiceStep(step) : step
-  if (!item) return
-  if (item.kind === 'random') {
-    var lines = bubbleRandomLines || pickRandomLines()
-    sceneOpen('random', function () { bubbleRenderRandom(lines) }, BUBBLE_MS)
-  } else if (item.kind === 'custom') {
-    sceneOpen('custom', function () { bubbleRenderModules(item.modules || []) }, BUBBLE_MS)
-  } else {
-    sceneOpen('normal', bubbleRenderDefault, BUBBLE_MS)
-  }
+  // Data refresh is not a user click: keep the selected step, random choice and
+  // deadline, replacing only dynamic text inside the current scene.
+  try {
+    if (bubbleScene && bubbleScene.kind === 'custom' && Array.isArray(bubbleLiveMods)) {
+      bubbleClearModuleRows()
+      bubbleRenderModules(bubbleLiveMods)
+    } else if (bubbleScene && bubbleScene.kind === 'random') {
+      bubbleClearModuleRows()
+      bubbleRenderRandom(bubbleRandomLines)
+    } else if (bubbleScene && bubbleScene.kind === 'normal') {
+      bubbleClearModuleRows()
+      bubbleRenderDefault()
+    }
+    if (window.__AIWhaleStandalone && window.__AIWhaleLayoutUpdated) window.__AIWhaleLayoutUpdated()
+  } catch (err) {}
 }
 function applyStandaloneNativeState() {
   if (!window.__AIWhaleStandalone) return
@@ -10324,7 +10264,7 @@ function applyStandaloneNativeState() {
     window.__AIWhaleAppliedBubbleRevision = 'upstream-bubble-defaults-v47468f7'
     bubbleCfg = null
     bubbleLib = []
-    bubbleTapAdvance = false
+    bubbleTapAdvance = true
     bubbleSeq = bubbleDefaultQueue()
   }
   if (typeof incoming.showMenuButton === 'boolean') {
@@ -10347,6 +10287,7 @@ function applyStandaloneNativeState() {
   state.todayUsage = null
   state.usageLabel = first ? (first.name || '') : state.message
   state.isPeak = false
+  bubbleReshowCurrent()
   render()
 }
 window.addEventListener("aiwhale-data", applyStandaloneNativeState)
@@ -10601,7 +10542,7 @@ var bubbleLib = [] // 可选模块库(当前会话编辑用,随配置保存):[{i
 // v727「点按角色推进泡泡队列」（仅「自定义泡泡」菜单可设，存在泡泡配置里）：
 //   关闭（默认）= 点鲸鱼时，正在看第 2 项及以后 → 回到第 1 项（旧行为）
 //   开启       = 点鲸鱼 = 往后推进一项；已是最后一项 → 收起泡泡（与「点泡泡」一致），下次点按从第 1 项开始
-var bubbleTapAdvance = false
+var bubbleTapAdvance = true
 function bubbleCloneModule(m) {
   return JSON.parse(JSON.stringify(m || {}))
 }
@@ -11747,8 +11688,49 @@ function bubblePeakRowApply(x, peak) {
   } catch (err) {}
 }
 // v209: 计算单个模块要显示的行文本(与随机选中行),每次全新计算、不跨行复用状态
+function standaloneMetricText(mod) {
+  var m = mod || {}
+  var accounts = whaleNowdexAccounts()
+  if (m.type === 'dashboard') {
+    var enabled = accounts.filter(function (a) { return a && a.enabled !== false })
+    if (!enabled.length) return '没有启用的账户'
+    return enabled.map(function (a) {
+      var w0 = (a.windows || [])[0] || {}
+      return (a.name || a.id || '账户') + ' ' + (a.kind === 'balance' ? whaleMoney(a) : whaleRemainLabel(w0.remainPct))
+    }).join(' · ')
+  }
+  if (m.type !== 'quota' && m.type !== 'plan' && m.type !== 'balance') return null
+  // modelId is the beta field; it is an explicit account binding, not a
+  // fallback to whichever account happens to be first.
+  var accountID = m.accountId || m.modelId
+  var account = accounts.filter(function (a) { return a && a.id === accountID && a.enabled !== false })[0]
+  if (!account) return '账户未连接'
+  if (m.type === 'balance') {
+    var money = whaleMoney(account)
+    return bubbleContentText(m, money)
+  }
+  var windows = Array.isArray(account.windows) ? account.windows : []
+  var win = m.windowId ? windows.filter(function (w) { return w && w.id === m.windowId })[0] : windows[0]
+  if (!win) return bubbleContentText(m, '额度窗口不可用')
+  var raw
+  var field = m.field || (m.type === 'plan' ? 'remain' : 'summary')
+  if (field === 'used') raw = (typeof win.usedPct === 'number' && isFinite(win.usedPct)) ? ('已用 ' + Math.round(win.usedPct) + '%') : '已用 —'
+  else if (field === 'reset') raw = whaleFormatReset(win.resetAt)
+  else if (field === 'window') raw = win.label || '额度窗口'
+  else if (field === 'full' || field === 'summary') raw = (win.label || '额度') + ' · 剩 ' + whaleRemainLabel(win.remainPct) + ' · ' + whaleFormatReset(win.resetAt)
+  else raw = whaleRemainLabel(win.remainPct)
+  if (m.tpl) {
+    var map = { remain: whaleRemainLabel(win.remainPct), left: whaleRemainLabel(win.remainPct), remaining: whaleRemainLabel(win.remainPct), used: (typeof win.usedPct === 'number' && isFinite(win.usedPct)) ? Math.round(win.usedPct) + '%' : '—', reset: whaleFormatReset(win.resetAt), window: win.label || '额度窗口' }
+    raw = String(m.tpl).replace(/\{([^}]+)\}/g, function (_, key) { return map[key] == null ? '{' + key + '}' : map[key] })
+  }
+  return raw
+}
 function bubbleRowContentOf(mod) {
   mod = mod || {}
+  if (window.__AIWhaleStandalone) {
+    var nativeText = standaloneMetricText(mod)
+    if (nativeText !== null) return { txt: nativeText, line: null }
+  }
   if (mod.type === 'nextpeak' || (mod.type === 'peak' && bubbleIsPeakCount(mod))) return { txt: bubbleCountTextOf(mod), line: null }
   if (mod.type === 'balance') {
     var bv = bubbleIsModelMod(mod) ? apiModelBalanceText(mod.modelId) : bubbleAmountText()
@@ -11986,7 +11968,8 @@ function bubbleRowsTo(parentEl, mods) {
       var chunk = []
       for (var c = s; c < grp.length && c < s + MOD_MAX; c++) {
         var cm = grp[c] || {}
-        if (window.__AIWhaleStandalone && renderNowdexModule(parentEl, cm)) { rows++; continue }
+            // Standalone quota/balance modules enter the same row renderer as every
+        // upstream module; this preserves row limits, style, templates and wrap.
         // v209: 每行内容由独立函数一次算出(文本+随机选中行),不在行间复用状态
         var rowContent = bubbleRowContentOf(cm)
         if (!rowContent || rowContent.txt === '' || rowContent.txt === undefined || rowContent.txt === null) continue
@@ -13182,7 +13165,7 @@ function showConfirm(text, cb, okLabel) {
     if (!okLabel) okLabel = String(text || '').indexOf('删除') !== -1 ? '删除' : '确定'
     confirmYesBtn.textContent = okLabel
   } catch (err) {}
-  confirmMask.style.display = 'flex'
+  showEditorOverlay(confirmMask)
 }
 function hideConfirm() {
   confirmMask.style.display = 'none'
@@ -15007,8 +14990,9 @@ if (window.__AIWhaleEditorMode) {
       if (!editorHost || !document.documentElement.contains(editorHost)) return null
       window.__AIWhaleEditorMount = editorHost
       editorMount = editorHost
-      ;[bubbleMask, bubbleItemMask, moduleMask].forEach(function (overlay) {
+      ;[bubbleMask, bubbleItemMask, moduleMask, moduleNamePromptMask, confirmMask].forEach(function (overlay) {
         if (overlay && overlay.parentNode !== editorHost) editorHost.appendChild(overlay)
+        if (overlay) overlay.classList.add('dshwv-editor-inline-overlay')
       })
       return editorHost
     }

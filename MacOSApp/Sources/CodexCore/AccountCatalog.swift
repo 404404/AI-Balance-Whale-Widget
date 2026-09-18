@@ -110,7 +110,7 @@ public enum AccountCatalog {
         "codex": [
             "label": "Codex / ChatGPT", "kind": "subscription", "currency": "USD",
             "tokenHint": "本机 Codex 登录态",
-            "help": "Nowdex 同款：读 5 小时窗和周额度。本机 Codex CLI 登录即可实查，不需要 DeepSeek Key，也不和余额账户互斥。HTTP 仅作后备。",
+            "help": "Nowdex 同款：读 5 小时窗和周额度。在 App 中完成官方浏览器授权即可实查，不需要 DeepSeek Key，也不和余额账户互斥。",
         ],
         "grok": [
             "label": "Grok / SuperGrok", "kind": "subscription", "currency": "USD",
@@ -179,8 +179,7 @@ public enum AccountCatalog {
             ["id": "step-dash", "modules": [["type": "dashboard"]]],
             ["id": "step-codex", "modules": [
                 ["type": "text", "text": "Codex 订阅", "size": 12, "bold": true],
-                ["type": "quota", "accountId": "codex", "windowId": "5h", "field": "full"],
-                ["type": "quota", "accountId": "codex", "windowId": "week", "field": "full"],
+                ["type": "quota", "accountId": "codex", "field": "full"],
             ]],
             ["id": "step-grok", "modules": [
                 ["type": "text", "text": "Grok 周额度", "size": 12, "bold": true],
@@ -283,7 +282,7 @@ public enum AccountCatalog {
         return next
     }
 
-    /// Codex uses local CLI login (app-server), so it live-fetches whenever enabled.
+    /// Codex uses App-owned browser authorization, so it live-fetches whenever enabled.
     /// Other providers need an explicit token in Keychain.
     public static func shouldLiveFetch(provider: String, authMode: String, hasToken: Bool) -> Bool {
         if provider == "codex" { return true }
@@ -447,7 +446,7 @@ public enum AccountCatalog {
             for module in modules {
                 switch module["type"] as? String {
                 case "plan":
-                    converted.append(["type": "quota", "accountId": "codex", "windowId": "5h", "field": "full"])
+                    converted.append(["type": "quota", "accountId": "codex", "field": "full"])
                 case "balance":
                     converted.append(["type": "balance", "accountId": module["modelId"] as? String ?? "deepseek"])
                 case "random":
@@ -470,7 +469,8 @@ public enum AccountCatalog {
 
     private static func mapCodexWindow(_ bucket: RateLimitBucket) -> (id: String, label: String) {
         if bucket.id == "codex" || bucket.id.isEmpty {
-            let id = bucket.window == .primary ? "5h" : "week"
+            let duration = bucket.windowDurationMinutes.map(String.init) ?? bucket.window.rawValue
+            let id = "\(bucket.window.rawValue)-\(duration)"
             let label = bucket.name?.isEmpty == false ? bucket.name! : RateLimitPresentation.windowName(for: bucket, durationMinutes: bucket.windowDurationMinutes)
             return (id, label)
         }

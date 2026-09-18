@@ -9,57 +9,49 @@ MENU="$ROOT/MacOSApp/Resources/NativeContextMenu.html"
 WINDOW="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleWindowController.swift"
 STORE="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleConfigurationStore.swift"
 HOST="$ROOT/MacOSApp/Sources/AIBalanceWhale/WhaleHostAdapter.swift"
-CODEX="$ROOT/MacOSApp/Sources/AIBalanceWhale/CodexAppServerClient.swift"
 HTTP="$ROOT/MacOSApp/Sources/AIBalanceWhale/CodexHTTPUsageClient.swift"
 COORD="$ROOT/MacOSApp/Sources/AIBalanceWhale/QuotaRefreshCoordinator.swift"
+OAUTH="$ROOT/MacOSApp/Sources/AIBalanceWhale/CodexOAuthCoordinator.swift"
+KEYCHAIN="$ROOT/MacOSApp/Sources/AIBalanceWhale/CodexCredentialStore.swift"
+COREOAUTH="$ROOT/MacOSApp/Sources/CodexCore/CodexOAuthSupport.swift"
 CATALOG="$ROOT/MacOSApp/Sources/CodexCore/AccountCatalog.swift"
 
 for pattern in "__AIWhaleStandalone" "__AIWhaleHostResponse" "navigationToken" "bubbleLayout" "whale-widget.js"; do
   grep -Fq "$pattern" "$HTML" || { echo "missing standalone WhaleWidget pattern: $pattern" >&2; exit 1; }
 done
-for pattern in "contextmenu" "pointerup" "pointercancel" "dshwv-bshape" "dshwv-b1" "dshwv-b2" "BUBBLE_DEFAULT_ITEMS" "bubblePickLine" "bubblePlanWinOptions" "__AIWhaleStandalone" "dshwv-menu-btn-pinned" "renderNowdexModule" "stepsToBubbleCfg"; do
+for pattern in "contextmenu" "pointerup" "pointercancel" "dshwv-bshape" "dshwv-b1" "dshwv-b2" "BUBBLE_DEFAULT_ITEMS" "bubblePickLine" "bubbleReshowCurrent" "standaloneMetricText" "showEditorOverlay" "__AIWhaleStandalone" "dshwv-menu-btn-pinned" "stepsToBubbleCfg"; do
   grep -Fq "$pattern" "$ASSET" || { echo "missing upstream asset pattern: $pattern" >&2; exit 1; }
 done
-for pattern in 'data-page="general"' 'data-page="accounts"' 'data-page="bubbles"' 'data-page="appearance"' 'data-page="sounds"' 'data-page="alerts"' 'data-page="about"' 'messageHandlers.settings' 'saveCredential' 'Keychain' 'Application Support' '账户与额度' '气泡内容'; do
+for pattern in 'data-page="general"' 'data-page="accounts"' 'data-page="bubbles"' 'data-page="appearance"' 'data-page="sounds"' 'data-page="alerts"' 'data-page="about"' 'messageHandlers.settings' 'saveCredential' 'Keychain' 'Application Support' '账户与额度' '气泡内容' 'loginCodex' 'refreshCodex' 'disconnectCodex'; do
   grep -Fq "$pattern" "$SETTINGS" || { echo "missing settings pattern: $pattern" >&2; exit 1; }
 done
-if grep -Fq '<iframe' "$SETTINGS"; then
-  echo "settings must not use an iframe" >&2
-  exit 1
+if grep -Fq '<iframe' "$SETTINGS"; then echo "settings must not use an iframe" >&2; exit 1; fi
+if grep -Eq 'codexPath|codexHome|Codex CLI|app-server|session|Bearer|accountID.*input' "$SETTINGS"; then
+  echo "Codex settings expose a forbidden CLI or pasted-auth field" >&2; exit 1
 fi
 grep -Fq '__AIWhaleEditorMode' "$SETTINGS"
 grep -Fq 'upstreamEditorMount' "$SETTINGS"
 grep -Fq 'openBubbleEditor' "$SETTINGS"
-if grep -Fq 'data-page="models"' "$SETTINGS" || grep -Fq 'data-page="resources"' "$SETTINGS"; then
-  echo "settings must not keep the unopenable models/resources pages" >&2
-  exit 1
-fi
-for pattern in "刷新额度" "编辑气泡" "data-action=\"settingsAccounts\"" "data-action=\"settings\""; do
+for pattern in "刷新额度" "编辑气泡" 'data-action="settingsAccounts"' 'data-action="settings"'; do
   grep -Fq "$pattern" "$MENU" || { echo "missing native menu pattern: $pattern" >&2; exit 1; }
 done
-grep -Fq 'WhaleLayout.contentSize' "$WINDOW"
-grep -Fq 'saved.width - newSize.width' "$WINDOW"
-grep -Fq 'frame.origin.y = saved.minY' "$WINDOW"
-grep -Fq 'frame.origin.y = old.minY' "$WINDOW"
-grep -Fq 'resourceDataURL' "$WINDOW"
-grep -Fq 'showMenuButton' "$WINDOW"
-grep -Fq 'isMenuButtonPoint' "$WINDOW"
-grep -Fq 'schemaVersion' "$STORE"
-grep -Fq 'builtin-dsniang' "$STORE"
-grep -Fq 'accounts' "$STORE"
-grep -Fq 'showMenuButton' "$STORE"
-grep -Fq 'account/rateLimits/read' "$CODEX"
-grep -Fq 'chatgpt.com/backend-api/wham/usage' "$HTTP"
-grep -Fq 'CodexAppServerClient' "$COORD"
-grep -Fq 'CodexHTTPUsageClient' "$COORD"
+for pattern in 'WhaleLayout.contentSize' 'frame.origin.y = saved.minY' 'frame.origin.y = old.minY' 'resourceDataURL' 'showMenuButton' 'isMenuButtonPoint'; do
+  grep -Fq "$pattern" "$WINDOW" || { echo "missing native layout pattern: $pattern" >&2; exit 1; }
+done
+for pattern in 'schemaVersion' 'builtin-dsniang' 'accounts' 'showMenuButton'; do grep -Fq "$pattern" "$STORE" || exit 1; done
+for pattern in 'auth.openai.com' 'code_challenge_method' 'state' 'redirectURI'; do grep -Fq "$pattern" "$COREOAUTH" || { echo "missing OAuth core pattern: $pattern" >&2; exit 1; }; done
+for pattern in 'CodexCredentialStore' 'SecItem' 'app-keychain'; do grep -Fq "$pattern" "$KEYCHAIN" || exit 1; done
+for pattern in 'chatgpt.com/backend-api/wham/usage' 'CodexCredentialStore' 'NoRedirectDelegate'; do grep -Fq "$pattern" "$HTTP" || exit 1; done
+for pattern in 'CodexHTTPUsageClient' 'CodexCredentialStore' 'requestID' 'generation'; do grep -Fq "$pattern" "$COORD" || exit 1; done
+if rg -n 'CodexAppServerClient|CodexLoginCoordinator|CodexLocator|codexPath|codexHome|account/rateLimits/read|app-server' "$ROOT/MacOSApp/Sources" --glob '*.swift'; then
+  echo "deprecated CLI/app-server runtime path remains in production sources" >&2
+  exit 1
+fi
 grep -Fq 'kind: "subscription"' "$CATALOG"
 grep -Fq 'dashboard' "$CATALOG"
 grep -Fq 'shouldLiveFetch' "$CATALOG"
 grep -Fq 'bubbleRevision' "$CATALOG"
 grep -Fq 'tapAdvance' "$HOST"
-grep -Fq 'native __AIWhale.update is the source of truth' "$ASSET"
-grep -Fq 'Codex 登录由官方 CLI' "$SETTINGS"
-grep -Fq '不要求粘贴 session、Cookie 或 token' "$SETTINGS"
 grep -Fq 'publicAccounts' "$HOST"
 grep -Fq 'saveCredential' "$HOST"
 test -s "$SETTINGS"

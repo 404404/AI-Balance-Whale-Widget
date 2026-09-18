@@ -321,7 +321,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
         let releaseSound = store.resourceDataURL(kind: "audio", id: releaseRef) ?? releaseRef
         let revision: String
         if customized, let items = bubble["items"] as? [[String: Any]], !items.isEmpty {
-            revision = AccountCatalog.compactJSON(["items": items, "lib": bubble["lib"] as? [[String: Any]] ?? [], "tapAdvance": bubble["tapAdvance"] as? Bool ?? false]) ?? AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
+            revision = AccountCatalog.compactJSON(["items": items, "lib": bubble["lib"] as? [[String: Any]] ?? [], "tapAdvance": bubble["tapAdvance"] as? Bool ?? true]) ?? AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
         } else {
             revision = AccountCatalog.bubbleRevision(steps: steps, accounts: accounts)
         }
@@ -349,7 +349,7 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
                 "v": bubble["v"] ?? 1,
                 "items": items,
                 "lib": bubble["lib"] as? [[String: Any]] ?? [],
-                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? false),
+                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? true),
                 "closeAfterSeconds": bubble["closeAfterSeconds"] ?? 0,
             ]
         }
@@ -634,9 +634,14 @@ final class WhaleWindowController: NSWindowController, WKScriptMessageHandler, W
 
     private func localDOMPoint(for event: NSEvent) -> NSPoint? {
         guard let contentView = panel.contentView else { return nil }
-        let local = contentView.convert(event.locationInWindow, from: nil)
+        // event.locationInWindow is already in the window's coordinate system;
+        // converting it as if it were a screen point shifts hit testing after a
+        // resize and is the reason clicks appeared to stop working.
+        let windowPoint = event.locationInWindow
+        let localX = windowPoint.x - contentView.frame.minX
+        let localY = windowPoint.y - contentView.frame.minY
         let bounds = contentView.bounds
-        return NSPoint(x: local.x, y: bounds.height - local.y)
+        return NSPoint(x: localX, y: bounds.height - localY)
     }
 
     private func isWhalePoint(_ point: NSPoint) -> Bool {

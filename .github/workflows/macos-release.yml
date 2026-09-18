@@ -26,6 +26,7 @@ concurrency:
 jobs:
   package:
     runs-on: macos-15
+    timeout-minutes: 60
     permissions:
       contents: write
       actions: read
@@ -154,11 +155,16 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :AIAppReleaseTag' "$APP/Contents/Info.plist")" = "${{ steps.release.outputs.version }}"
           mkdir -p "$RUNNER_TEMP/ai-balance-whale-verify"
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/ai-balance-whale-verify" "$DMG" >/dev/null
+          trap 'hdiutil detach "$RUNNER_TEMP/ai-balance-whale-verify" >/dev/null || true' EXIT
           MOUNTED_APP="$RUNNER_TEMP/ai-balance-whale-verify/AI Balance Whale.app"
           test -d "$MOUNTED_APP"
           test -e "$RUNNER_TEMP/ai-balance-whale-verify/Applications"
           bash MacOSApp/scripts/verify-app.sh "$MOUNTED_APP"
+          WHALE_WIDGET_RESOURCE_ROOT="$MOUNTED_APP/Contents/Resources" \
+            WHALE_ACCEPTANCE_RESULTS="$RUNNER_TEMP/ai-balance-whale-acceptance/dmg" \
+            bash MacOSApp/scripts/acceptance-gate.sh packaged
           hdiutil detach "$RUNNER_TEMP/ai-balance-whale-verify" >/dev/null
+          trap - EXIT
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -173,7 +179,7 @@ jobs:
 
           - Source commit: ${{ steps.release.outputs.source_sha }}
           - Target: macOS 14+, Apple Silicon arm64
-          - Codex provider: local stdio codex app-server; fixture tests run in CI, real account data is never used in CI
+          - Codex provider: App-owned browser OAuth with PKCE, Keychain storage and native WHAM usage; fixture tests run in CI, real account data is never used in CI
           - Icon: AppIcon.icns is generated from the bundled whale artwork and used by both the app bundle and the menu bar status item
           - Signing: ${SIGNING_MODE}; Developer ID builds are notarized and stapled when configured
           - Upstream baseline: MeteorNOX/DeepSeek-Balance-Whale-Widget@47468f71613fe63f1f809ee1be1fb37e4d703c3b

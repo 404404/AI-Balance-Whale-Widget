@@ -44,7 +44,7 @@ enum ProviderTemplates {
         make("minimax_coding", "MiniMax Coding（订阅）", "CNY", "MINIMAX_API_KEY", kind: "quota", probeURL: "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"),
         make("openai_compat", "OpenAI 兼容中转站", "USD", "CUSTOM_API_KEY", balanceURL: "{base}/v1/dashboard/billing/subscription", totalPath: "hard_limit_usd", needsBaseURL: true),
         make("custom", "自定义 HTTP", "CNY", "CUSTOM_API_KEY"),
-        make("codex", "Codex（ChatGPT 订阅）", "CNY", "", kind: "codex", note: "额度由本机 codex app-server 提供，不使用 API key。"),
+        make("codex", "Codex（ChatGPT 订阅）", "CNY", "", kind: "codex", note: "额度由 App 自有 ChatGPT 登录读取，不使用 API key。"),
         make("openai", "OpenAI", "USD", "OPENAI_API_KEY", noBalanceAPI: true, probeURL: "https://api.openai.com/v1/models", note: "没有公开 API key 余额接口；余额不可用。"),
         make("anthropic", "Anthropic Claude", "USD", "ANTHROPIC_API_KEY", noBalanceAPI: true, note: "没有通用余额接口；余额不可用。"),
         make("gemini", "Google Gemini", "USD", "GEMINI_API_KEY", noBalanceAPI: true, probeURL: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", note: "配额在控制台；余额不可用。"),
