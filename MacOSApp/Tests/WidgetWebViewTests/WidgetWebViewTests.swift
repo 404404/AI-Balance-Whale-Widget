@@ -98,31 +98,6 @@ final class WidgetWebViewTests: XCTestCase {
         }
     }
 
-    /// Models the native controller's bubbleLayout response: the WebView
-    /// reports its measured upstream SVG height, then AppKit expands the
-    /// window upward while keeping the whale at its bottom anchor.
-    private final class WidgetLayoutBridge: NSObject, WKScriptMessageHandler {
-        weak var webView: WKWebView?
-        var receivedMessages = 0
-        var lastVisible = false
-
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any],
-                  body["type"] as? String == "bubbleLayout",
-                  let webView else { return }
-            receivedMessages += 1
-            let visible = (body["visible"] as? Bool) ?? (body["visible"] as? NSNumber)?.boolValue ?? false
-            lastVisible = visible
-            let rawScale = (body["scale"] as? Double) ?? (body["scale"] as? NSNumber)?.doubleValue ?? 1.0
-            let rawBubbleHeight = (body["height"] as? Double) ?? (body["height"] as? NSNumber)?.doubleValue ?? 178
-            let scale = max(0.65, min(1.6, rawScale))
-            let bubbleHeight = max(120, min(250, rawBubbleHeight))
-            let baseHeight = visible ? 174.0 + 6.0 + bubbleHeight : 184.0
-            let height = baseHeight * scale
-            webView.evaluateJavaScript("window.__AIWhale && window.__AIWhale.setLayout({scale:\(scale),height:\(height)})", completionHandler: nil)
-        }
-    }
-
     func testPackagedSettingsMountsUpstreamEditorDirectly() async throws {
         let resourceRoot = try makeResourceRoot()
         let settings = resourceRoot.appendingPathComponent("Settings.html")
@@ -204,11 +179,7 @@ final class WidgetWebViewTests: XCTestCase {
     func testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate() async throws {
         let resourceRoot = try makeResourceRoot()
         let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
-        let configuration = WKWebViewConfiguration()
-        let layoutBridge = WidgetLayoutBridge()
-        configuration.userContentController.add(layoutBridge, name: "bridge")
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: configuration)
-        layoutBridge.webView = webView
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: WKWebViewConfiguration())
         let delegate = NavigationDelegate()
         webView.navigationDelegate = delegate
         let loaded = expectation(description: "continuous widget loaded")
@@ -262,13 +233,10 @@ final class WidgetWebViewTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: html.path), "missing WhaleWidget.html at \(html.path)")
 
         let configuration = WKWebViewConfiguration()
-        let layoutBridge = WidgetLayoutBridge()
-        configuration.userContentController.add(layoutBridge, name: "bridge")
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 420, height: 420),
             configuration: configuration
         )
-        layoutBridge.webView = webView
         let delegate = NavigationDelegate()
         webView.navigationDelegate = delegate
         let loaded = expectation(description: "WhaleWidget.html loaded")
@@ -316,8 +284,13 @@ final class WidgetWebViewTests: XCTestCase {
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown()")
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerUp(false)")
         try await Task.sleep(nanoseconds: 180_000_000)
+        // The real NSPanel receives bubbleLayout and sends this measured
+        // union height back through setLayout. This WebKit-only test has no
+        // AppKit controller, so apply the equivalent native response here;
+        // the geometry assertions still use the packaged HTML and assets.
+        _ = try await evaluate(webView, "window.__AIWhale.setLayout({scale:1,height:358})")
+        try await Task.sleep(nanoseconds: 100_000_000)
         let expanded = try await widgetMetrics(webView)
-        print("WHALE_LAYOUT_BRIDGE messages=\(layoutBridge.receivedMessages) lastVisible=\(layoutBridge.lastVisible)")
         assertWhaleVisible(expanded, label: "expanded bubble")
         XCTAssertEqual(expanded["bubbleVisible"] as? Bool, true)
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
@@ -525,6 +498,7 @@ final class WidgetWebViewTests: XCTestCase {
         try fileManager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         try fileManager.copyItem(at: packageRoot.appendingPathComponent("Resources/WhaleWidget.html"), to: tempRoot.appendingPathComponent("WhaleWidget.html"))
         try fileManager.copyItem(at: packageRoot.appendingPathComponent("Resources/Settings.html"), to: tempRoot.appendingPathComponent("Settings.html"))
+        try fileManager.copyItem(at: packageRoot.appendingPathComponent("acceptance/upstream-bubble-defaults.json"), to: tempRoot.appendingPathComponent("upstream-bubble-defaults.json"))
         for name in ["DSniang1.png", "Ya1.mp3", "Ya2.mp3", "whale-widget.js", "rua.gif", "bubble-petpet.gif"] {
             let source = sourceRoot.appendingPathComponent("assets").appendingPathComponent(name)
             if fileManager.fileExists(atPath: source.path) {
