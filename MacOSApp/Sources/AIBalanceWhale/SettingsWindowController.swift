@@ -7,7 +7,6 @@ import CodexCore
 final class SettingsWindowController: NSWindowController, WKScriptMessageHandler, WKNavigationDelegate {
     var onAppearanceChanged: (() -> Void)?
     var onConnectionChanged: (() -> Void)?
-    var onTestConnection: ((String, String) -> Void)?
     var onRefreshAccounts: ((String?) -> Void)?
     var onCodexLogin: (() -> Void)?
     var onCodexDisconnect: (() -> Void)?
@@ -118,33 +117,13 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             guard let config = body["config"] as? [String: Any] else { return }
             applyConfiguration(config)
             onAppearanceChanged?()
-        case "saveConnection":
-            let path = selectedPath(from: body)
-            let home = (body["home"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let preferences = AppPreferences.shared
-            let changed = preferences.codexPath != path || preferences.codexHome != home
-            preferences.codexPath = path
-            preferences.codexHome = home
-            if changed { onConnectionChanged?() }
-            sendPayload()
-        case "testConnection":
-            let path = selectedPath(from: body)
-            let home = (body["home"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            AppPreferences.shared.codexPath = path
-            AppPreferences.shared.codexHome = home
-            onTestConnection?(path, home)
-        case "loginCodex":
+        case "loginCodex", "reloginCodex":
             onCodexLogin?()
         case "disconnectCodex":
             onCodexDisconnect?()
-        case "redetectConnection":
-            AppPreferences.shared.codexPath = ""
-            onConnectionChanged?()
             sendPayload()
-        case "chooseCodex":
-            chooseCodexExecutable()
-        case "chooseCodexHome":
-            chooseCodexHome()
+        case "refreshCodex":
+            onRefreshAccounts?("codex")
         case "resetLayout":
             WhaleConfigurationStore.shared.resetLayout()
             onResetLayout?()
@@ -277,14 +256,6 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
            let jsonString = String(data: encoded, encoding: .utf8) {
             sendJavaScript("window.__AIWhaleSettings && window.__AIWhaleSettings.update(\(jsonString))")
         }
-        if let path = connection["resolvedPath"] as? String, !cliVersionProbeCompleted.contains(path) {
-            cliVersionProbeCompleted.insert(path)
-            CodexLocator.version(at: URL(fileURLWithPath: path)) { [weak self] version in
-                guard let self else { return }
-                if let version { self.cliVersionCache[path] = version }
-                self.sendPayload()
-            }
-        }
     }
 
     private func sendPageSelection() {
@@ -303,56 +274,18 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
         return String(encoded.dropFirst().dropLast())
     }
 
-    private var cliVersionCache: [String: String] = [:]
-    private var cliVersionProbeCompleted = Set<String>()
-
-    private func selectedPath(from body: [String: Any]) -> String {
-        let raw = (body["path"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return (body["pathMode"] as? String) == "auto" ? "" : raw
-    }
-
     private func connectionPayload() -> [String: Any] {
-        let preferences = AppPreferences.shared
         let status = connectionState?()
-        var result = CodexLocator.connectionInfo(
-            configuredPath: preferences.codexPath,
-            configuredHome: preferences.codexHome
-        )
-        let resolvedPath = result["resolvedPath"] as? String
-        result["home"] = result["effectiveHome"] ?? ""
-        result["message"] = status?.message ?? (resolvedPath == nil ? "未找到可执行的 codex" : "已找到 codex，等待测试连接")
-        result["status"] = status?.status.rawValue ?? "idle"
-        if let email = status?.email { result["account"] = email }
-        if let source = status?.authSource { result["authSource"] = source }
+        var result = CodexCredentialStore.shared.statusPayload()
+        result["status"] = status?.status.rawValue ?? (result["status"] ?? "notLoggedIn")
+        result["message"] = status?.message ?? "请在浏览器中连接 ChatGPT/Codex"
+        if let email = status?.email { result["email"] = email }
+        if let plan = status?.planType { result["plan"] = plan }
         if let accountID = status?.accountKey { result["accountID"] = accountID }
-        if let version = status?.cliVersion { result["version"] = version }
-        else if let resolvedPath, let version = cliVersionCache[resolvedPath] { result["version"] = version }
+        if let source = status?.authSource { result["authSource"] = source }
+        result["buckets"] = AccountCatalog.windows(from: status?.buckets ?? []).map(\.dictionary)
+        if let updated = status?.lastUpdated { result["lastUpdated"] = updated.timeIntervalSince1970 * 1000 }
         return result
-    }
-
-    private func chooseCodexExecutable() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.resolvesAliases = true
-        guard panel.runModal() == .OK, let url = panel.url, FileManager.default.isExecutableFile(atPath: url.path) else {
-            return
-        }
-        AppPreferences.shared.codexPath = url.path
-        onConnectionChanged?()
-        sendPayload()
-    }
-
-    private func chooseCodexHome() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        AppPreferences.shared.codexHome = url.path
-        onConnectionChanged?()
-        sendPayload()
     }
 
     private func diagnostics() -> [[String: Any]] {

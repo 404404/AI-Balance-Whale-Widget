@@ -1,6 +1,6 @@
 import Foundation
 
-/// Incremental decoder for the app-server's newline-delimited JSON transport.
+/// Incremental decoder for the newline-delimited JSON transport.
 /// It intentionally does not parse JSON; callers can associate each complete
 /// frame with a request while this type handles arbitrary read boundaries.
 public struct JSONLFrameDecoder: Sendable {

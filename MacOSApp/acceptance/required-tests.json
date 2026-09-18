@@ -1,21 +1,70 @@
 {
-  "version": 1,
+  "version": 2,
   "requiredCheck": "acceptance-gate",
+  "baseline": "801aa5d4bfa6f4dc862c8562122ee0f9296766b2",
   "source": [
-    "CodexCoreTests.AccountCatalogTests",
-    "CodexCoreTests.RateLimitModelsTests"
+    "AccountCatalogTests.testRandomDefaultsContainUpstreamFullPool",
+    "AccountCatalogTests.testUpstreamFixtureMatchesBundledRendererSnapshot",
+    "RateLimitModelsTests.testWhamUsageParsesPrimarySecondaryAndAdditionalBuckets",
+    "RateLimitModelsTests.testWhamUsageKeepsUnknownValuesUnknown",
+    "RateLimitModelsTests.testInvalidPercentNeverBecomesZeroOrOneHundred",
+    "BindingModelTests.testLegacyModelIDMigrationIsIdempotentAndLossless",
+    "BindingModelTests.testMoneyAndSubscriptionMetricsKeepUnitsAndUnknowns",
+    "BubbleStateTests.testDataRefreshPreservesStepChoiceAndDeadline"
   ],
   "auth": [
-    "WidgetWebViewTests.testPackagedSettingsMountsUpstreamEditorDirectly"
+    "BrowserAuthAcceptanceTests.testCodexLoginAndQuotaWithoutCLIOrCodexHome",
+    "BrowserAuthAcceptanceTests.testCallbacksRejectMismatchReplayAndLateCompletion",
+    "BrowserAuthAcceptanceTests.testRefreshAndDisconnectUseIsolatedNativeCredentials",
+    "BrowserAuthAcceptanceTests.testProviderCapabilityFlowsAndQuotaScopeFailures",
+    "BrowserAuthAcceptanceTests.testSettingsShowsOneAuthFlowPerAccountAndNoCodexPaths"
   ],
   "packaged": [
-    "WidgetWebViewTests.testPackagedSettingsMountsUpstreamEditorDirectly",
     "WidgetWebViewTests.testPackagedWidgetHasVisibleWhaleAcrossLayoutsAndFallback",
-    "WidgetWebViewTests.testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate"
+    "BubbleNativeAcceptanceTests.testDefaultContinuousClicksAdvanceExactlyOnce",
+    "BubbleNativeAcceptanceTests.testSavedClickEffectsAndTapAdvanceSurviveRestart",
+    "BubbleNativeAcceptanceTests.testFastAndSlowClicksWorkDuringPanelResize",
+    "BubbleNativeAcceptanceTests.testDraggingAndMenuClicksDoNotAdvanceQueue",
+    "BubbleBindingAcceptanceTests.testEnabledAccountsPopulateBalanceModuleOptions",
+    "BubbleBindingAcceptanceTests.testSavedBindingsRenderFetchedMetricsInRealClickBubble",
+    "BubbleBindingAcceptanceTests.testDisabledDeletedAndSameProviderAccountsStayIsolated",
+    "BubbleEditorAcceptanceTests.testQueueModuleAndRandomEditorsStayInSettingsFlow",
+    "BubbleEditorAcceptanceTests.testDraftSurvivesRefreshAndNavigationWithoutDuplicateHandlers",
+    "BubbleEditorAcceptanceTests.testSaveAndRestartChangeActualClickBubble",
+    "BubbleLayoutAcceptanceTests.testMultilineContentFitsSafeShapeAtEverySupportedScale",
+    "BubbleLayoutAcceptanceTests.testLongContentPaginatesAtReadableMinimumWithoutLosingMetrics",
+    "BubbleLayoutAcceptanceTests.testShortContentRestoresSizeWithoutMutatingSavedStyle",
+    "BubbleNativeAcceptanceTests.testUpstreamRandomPoolWeightsAndClickEffectsArePreserved"
   ],
   "scenarios": {
-    "configuration": ["migration", "save-restart", "canonical-bubble-sync"],
-    "interaction": ["native-pointer-queue", "drag-click-separation", "webkit-ready"],
-    "packaging": ["resource-completeness", "arm64", "dmg-content"]
+    "configuration": [
+      "lossless-versioned-migration",
+      "save-restart-actual-bubble",
+      "single-account-binding-source"
+    ],
+    "authentication": [
+      "native-browser-callback",
+      "no-cli-or-codex-home",
+      "keychain-isolation",
+      "provider-scope-validation"
+    ],
+    "interaction": [
+      "default-native-clicks",
+      "asynchronous-fast-and-slow-clicks",
+      "drag-click-separation",
+      "menu-and-side-button"
+    ],
+    "layout": [
+      "inline-editor-no-overlay",
+      "whole-content-font-fit",
+      "overflow-pagination",
+      "all-supported-scales"
+    ],
+    "packaging": [
+      "built-resources-only",
+      "arm64-app",
+      "verified-dmg",
+      "same-commit-shared-gate"
+    ]
   }
 }

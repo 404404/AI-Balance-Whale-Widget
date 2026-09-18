@@ -1,77 +1,45 @@
 import Foundation
 import CodexCore
 
-/// Refreshes every enabled account in parallel. Codex prefers local app-server,
-/// then the WHAM HTTP client using the current Codex login. It never accepts a
-/// pasted session token. Failed fetches keep
-/// the last successful windows/balance so the bubble never goes blank.
+/// Coordinates provider refreshes. Codex is an independent App-owned HTTP
+/// source; its auth lifecycle never starts, stops or reads a CLI process.
 final class QuotaRefreshCoordinator {
     var onAccountsUpdated: (([[String: Any]]) -> Void)?
     var onCodexConnection: ((ProviderState) -> Void)?
 
     private let store = WhaleConfigurationStore.shared
-    private let appServer = CodexAppServerClient()
-    private let http = CodexHTTPUsageClient()
+    private let codex = CodexHTTPUsageClient()
     private let external = ExternalProviderClient()
     private let queue = DispatchQueue(label: "com.404404.AIBalanceWhale.quota")
     private var generation = 0
     private var sleeping = false
     private var pending = 0
-    private var restartCodex = false
-    private var codexGeneration = 0
     private var latestCodex = ProviderState()
     private var codexDisconnected = false
 
     init() {
-        appServer.onStateChange = { [weak self] state in
-            self?.handleCodex(state, source: .appServer)
-        }
-        http.onStateChange = { [weak self] state in
-            self?.handleCodex(state, source: .http)
-        }
+        codex.onStateChange = { [weak self] state in self?.handleCodex(state) }
     }
 
-    func refresh() {
-        queue.async { [weak self] in self?.refreshLocked() }
-    }
-
+    func refresh() { queue.async { [weak self] in self?.refreshLocked() } }
     func refreshAccount(id: String) {
         queue.async { [weak self] in
             guard let self else { return }
-            // A user-initiated refresh is also the explicit reconnect action
-            // after “断开本 App 连接”. It never alters Codex CLI credentials.
             if id == "codex" { self.codexDisconnected = false }
             self.refreshLocked(only: id)
         }
     }
+    func configurationChanged() { queue.async { [weak self] in self?.codexDisconnected = false; self?.refreshLocked() } }
 
-    func configurationChanged() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.codexDisconnected = false
-            self.restartCodex = true
-            self.refreshLocked()
-        }
-    }
-
-    /// Disconnects only the connection owned by this App. It deliberately
-    /// leaves Codex CLI files, keychain entries and the user's CLI session
-    /// untouched. A later explicit refresh/configuration action reconnects.
     func disconnectCodex() {
         queue.async { [weak self] in
             guard let self else { return }
             self.codexDisconnected = true
-            self.codexGeneration = 0
-            self.restartCodex = false
-            self.appServer.stopImmediately()
-            self.http.stopImmediately()
-            self.latestCodex = ProviderState(status: .idle, message: "已断开本 App 连接；未注销 Codex CLI")
+            self.codex.stopImmediately()
+            CodexCredentialStore.shared.disconnect()
+            self.latestCodex = ProviderState(status: .notLoggedIn, message: "已断开本 App 授权；不会注销其他 Codex 登录", authSource: "app-keychain")
             self.emitCodex()
-            self.apply(id: "codex", patch: [
-                "status": "idle",
-                "message": "已断开本 App 连接；未注销 Codex CLI",
-                "windows": [] as [[String: Any]],
-            ], generation: self.generation, keepLastOnEmptyWindows: false)
+            self.apply(id: "codex", patch: ["status": "notLoggedIn", "message": self.latestCodex.message, "windows": [] as [[String: Any]], "updatedAt": NSNull()], generation: self.generation, keepLastOnEmptyWindows: false)
         }
     }
 
@@ -79,18 +47,11 @@ final class QuotaRefreshCoordinator {
         queue.async { [weak self] in
             guard let self else { return }
             self.sleeping = value
-            self.appServer.setSleeping(value)
-            self.http.setSleeping(value)
+            self.codex.setSleeping(value)
             if !value { self.refreshLocked() }
         }
     }
-
-    func stopImmediately() {
-        appServer.stopImmediately()
-        http.stopImmediately()
-    }
-
-    private enum CodexSource { case appServer, http }
+    func stopImmediately() { codex.stopImmediately() }
 
     private func refreshLocked(only: String? = nil) {
         guard !sleeping else { return }
@@ -102,7 +63,6 @@ final class QuotaRefreshCoordinator {
         }
         pending = 0
         publish()
-
         for account in targets {
             let id = account["id"] as? String ?? ""
             let provider = account["provider"] as? String ?? id
@@ -110,113 +70,62 @@ final class QuotaRefreshCoordinator {
             let keyRef = account["keyRef"] as? String ?? "account.\(id)"
             let token = store.credential(reference: keyRef) ?? ""
             let hasToken = !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-            // Codex auth is local CLI / app-server, not a pasted API key and not
-            // mutually exclusive with DeepSeek. Other providers stay on demo
-            // numbers until a Keychain token exists.
-            if !AccountCatalog.shouldLiveFetch(provider: provider, authMode: authMode, hasToken: hasToken) {
-                apply(id: id, patch: [
-                    "status": "demo",
-                    "message": "演示数据。填登录态后点刷新才会打真实接口。",
-                ], generation: current)
-                continue
-            }
-
             if provider == "codex" {
                 guard !codexDisconnected else { continue }
                 pending += 1
-                codexGeneration = current
-                latestCodex.status = .loading
-                latestCodex.message = "正在查询 Codex 额度…"
-                latestCodex.requestID = String(current)
+                latestCodex = ProviderState(status: .loading, message: "正在查询 Codex 额度…", authSource: "app-keychain", requestID: String(current))
                 emitCodex()
-                if restartCodex {
-                    restartCodex = false
-                    appServer.configurationChanged(requestID: String(current))
-                } else {
-                    appServer.refresh(requestID: String(current))
-                }
+                codex.refresh(requestID: String(current))
                 continue
             }
-
+            if !AccountCatalog.shouldLiveFetch(provider: provider, authMode: authMode, hasToken: hasToken) {
+                apply(id: id, patch: ["status": "demo", "message": "演示数据。连接真实账户后点刷新才会读取接口。"], generation: current)
+                continue
+            }
             pending += 1
             external.fetch(provider: provider, token: token) { [weak self] result in
-                self?.queue.async {
-                    self?.finishExternal(id: id, current: account, result: result, generation: current)
-                }
+                self?.queue.async { self?.finishExternal(id: id, result: result, generation: current) }
             }
         }
     }
 
-    private func handleCodex(_ state: ProviderState, source: CodexSource) {
+    private func handleCodex(_ state: ProviderState) {
         queue.async { [weak self] in
-            guard let self else { return }
-            // Every provider callback carries the coordinator cycle that
-            // started it. A late response from an older app-server/HTTP
-            // request must not be applied to the current account snapshot.
-            guard let requestID = state.requestID,
-                  requestID == String(self.codexGeneration),
-                  self.codexGeneration == self.generation else { return }
+            guard let self, let requestID = state.requestID, requestID == String(self.generation), !self.codexDisconnected else { return }
             self.latestCodex = state
             self.emitCodex()
-            let success = state.status == .ready || state.status == .stale
-            let generation = self.codexGeneration
-            if success {
-                self.applyCodex(state, generation: generation)
-                return
+            guard state.status != .loading else { return }
+            if state.status == .ready || state.status == .stale {
+                self.applyCodex(state, generation: self.generation)
+            } else {
+                self.applyCodexFailure(state, generation: self.generation)
             }
-            if source == .appServer, self.shouldFallback(state) {
-                self.http.refresh(requestID: String(generation))
-                return
-            }
-            if state.status != .loading && state.status != .idle {
-                self.applyCodexFailure(state.message, generation: generation)
-            }
-        }
-    }
-
-    private func shouldFallback(_ state: ProviderState) -> Bool {
-        switch state.status {
-        case .cliMissing, .notLoggedIn, .offline, .error, .unsupported, .apiKeyUnsupported:
-            return true
-        default:
-            return false
         }
     }
 
     private func applyCodex(_ state: ProviderState, generation: Int) {
+        var patch: [String: Any] = ["status": state.status == .stale ? "stale" : "ok", "message": state.message]
+        if let date = state.lastUpdated { patch["updatedAt"] = date.timeIntervalSince1970 * 1000 }
         let windows = AccountCatalog.windows(from: state.buckets)
-        var patch: [String: Any] = [
-            "status": state.status == .stale ? "stale" : (state.status == .ready ? "ok" : "error"),
-            "message": state.message,
-            "updatedAt": (state.lastUpdated ?? Date()).timeIntervalSince1970 * 1000,
-        ]
-        if !windows.isEmpty {
-            patch["windows"] = windows.map(\.dictionary)
-        }
+        if !windows.isEmpty { patch["windows"] = windows.map(\.dictionary) }
         apply(id: "codex", patch: patch, generation: generation, keepLastOnEmptyWindows: true)
         finishOne(generation)
     }
 
-    private func applyCodexFailure(_ message: String, generation: Int) {
-        apply(id: "codex", patch: [
-            "status": "error",
-            "message": message,
-        ], generation: generation, keepLastOnEmptyWindows: true)
+    private func applyCodexFailure(_ state: ProviderState, generation: Int) {
+        let accounts = store.accounts()
+        let hasCache = accounts.first(where: { ($0["id"] as? String) == "codex" })?["windows"] as? [[String: Any]] ?? []
+        apply(id: "codex", patch: ["status": hasCache.isEmpty ? "error" : "stale", "message": hasCache.isEmpty ? state.message : "额度查询失败，显示的是上次成功快照：\(state.message)"], generation: generation, keepLastOnEmptyWindows: true)
         finishOne(generation)
     }
 
-    private func finishExternal(id: String, current: [String: Any], result: QuotaFetchSnapshot, generation: Int) {
-        var patch: [String: Any] = [
-            "status": result.ok ? "ok" : "error",
-            "message": result.message,
-            "updatedAt": Date().timeIntervalSince1970 * 1000,
-        ]
+    private func finishExternal(id: String, result: QuotaFetchSnapshot, generation: Int) {
+        var patch: [String: Any] = ["status": result.ok ? "ok" : "error", "message": result.message, "updatedAt": Date().timeIntervalSince1970 * 1000]
         if result.ok {
             if !result.windows.isEmpty { patch["windows"] = result.windows.map(\.dictionary) }
-            if let remaining = result.remaining { patch["remaining"] = remaining }
-            if let used = result.used { patch["used"] = used }
-            if let total = result.total { patch["total"] = total }
+            if let value = result.remaining { patch["remaining"] = value }
+            if let value = result.used { patch["used"] = value }
+            if let value = result.total { patch["total"] = value }
         }
         apply(id: id, patch: patch, generation: generation, keepLastOnEmptyWindows: true)
         finishOne(generation)
@@ -231,10 +140,11 @@ final class QuotaRefreshCoordinator {
         let previousRemaining = next["remaining"]
         let previousUsed = next["used"]
         let previousTotal = next["total"]
-        for (key, value) in patch { next[key] = value }
+        for (key, value) in patch {
+            if value is NSNull { next.removeValue(forKey: key) } else { next[key] = value }
+        }
         if keepLastOnEmptyWindows {
-            let newWindows = next["windows"] as? [[String: Any]] ?? []
-            if newWindows.isEmpty, previousWindows != nil { next["windows"] = previousWindows }
+            if (next["windows"] as? [[String: Any] ] ?? []).isEmpty, previousWindows != nil { next["windows"] = previousWindows }
             if next["remaining"] == nil, previousRemaining != nil { next["remaining"] = previousRemaining }
             if next["used"] == nil, previousUsed != nil { next["used"] = previousUsed }
             if next["total"] == nil, previousTotal != nil { next["total"] = previousTotal }
@@ -244,22 +154,7 @@ final class QuotaRefreshCoordinator {
         publish()
     }
 
-    private func finishOne(_ generation: Int) {
-        guard generation == self.generation else { return }
-        pending = max(0, pending - 1)
-    }
-
-    private func account(_ id: String) -> [String: Any] {
-        store.accounts().first { ($0["id"] as? String) == id } ?? [:]
-    }
-
-    private func publish() {
-        let accounts = store.publicAccounts()
-        DispatchQueue.main.async { [weak self] in self?.onAccountsUpdated?(accounts) }
-    }
-
-    private func emitCodex() {
-        let state = latestCodex
-        DispatchQueue.main.async { [weak self] in self?.onCodexConnection?(state) }
-    }
+    private func finishOne(_ generation: Int) { guard generation == self.generation else { return }; pending = max(0, pending - 1) }
+    private func publish() { let accounts = store.publicAccounts(); DispatchQueue.main.async { [weak self] in self?.onAccountsUpdated?(accounts) } }
+    private func emitCodex() { let state = latestCodex; DispatchQueue.main.async { [weak self] in self?.onCodexConnection?(state) } }
 }

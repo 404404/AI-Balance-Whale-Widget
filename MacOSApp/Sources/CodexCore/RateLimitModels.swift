@@ -46,8 +46,8 @@ public struct ParsedRateLimits: Codable, Equatable, Sendable {
 }
 
 public enum RateLimitParser {
-    /// Parses the result object returned by account/rateLimits/read or the payload
-    /// of account/rateLimits/updated. Unknown fields are intentionally ignored.
+    /// Parses the result object returned by the structured usage response or the payload
+    /// of subscription update. Unknown fields are intentionally ignored.
     public static func parse(_ object: [String: Any], now: Date = Date()) -> ParsedRateLimits {
         let payload: [String: Any]
         if let result = object["result"] as? [String: Any] {

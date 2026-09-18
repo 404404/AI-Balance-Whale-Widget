@@ -3,18 +3,8 @@ name: macOS CI
 on:
   push:
     branches: [main, 'fix/**', 'feat/**']
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '**/*.md'
-      - 'LICENSE'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '**/*.md'
-      - 'LICENSE'
 
 permissions:
   contents: read
@@ -26,6 +16,7 @@ concurrency:
 jobs:
   acceptance-gate:
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:

@@ -3,7 +3,7 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let quota = QuotaRefreshCoordinator()
-    private let codexLogin = CodexLoginCoordinator()
+    private let codexLogin = CodexOAuthCoordinator()
     private var whaleWindow: WhaleWindowController!
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem!
@@ -55,12 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateMenuTitles()
             }
             controller.onConnectionChanged = { [weak self] in self?.quota.configurationChanged() }
-            controller.onTestConnection = { [weak self] path, home in
-                guard let self else { return }
-                AppPreferences.shared.codexPath = path
-                AppPreferences.shared.codexHome = home
-                self.quota.configurationChanged()
-            }
             controller.onRefreshAccounts = { [weak self] id in
                 if let id { self?.quota.refreshAccount(id: id) } else { self?.quota.refresh() }
             }
