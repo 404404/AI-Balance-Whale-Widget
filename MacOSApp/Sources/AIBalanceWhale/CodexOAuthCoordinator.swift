@@ -74,11 +74,11 @@ final class CodexOAuthCoordinator {
     private func handleCallback(target: String, connection: NWConnection) {
         guard let pending = request else { respond(connection, ok: false); return }
         let callbackURL = URL(string: "http://localhost\(target)")
-        let result = callbackURL.map { CodexOAuthSupport.validateCallback($0, request: pending) } ?? .failure("授权回调无法解析")
+        let result = callbackURL.map { CodexOAuthSupport.validateCallback($0, request: pending) } ?? .failure(CodexOAuthError("授权回调无法解析"))
         switch result {
         case .failure(let message):
             respond(connection, ok: false)
-            if message.contains("state") || message.contains("code") || message.contains("回调") { finish(.protocolError(message)) }
+            if message.message.contains("state") || message.message.contains("code") || message.message.contains("回调") { finish(.protocolError(message.message)) }
         case .success(let callback):
             guard consumedState != pending.state else { respond(connection, ok: false); finish(.protocolError("授权回调重复使用")); return }
             consumedState = pending.state

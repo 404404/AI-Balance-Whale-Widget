@@ -43,7 +43,7 @@ for pattern in 'auth.openai.com' 'code_challenge_method' 'state' 'redirectURI'; 
 for pattern in 'CodexCredentialStore' 'SecItem' 'app-keychain'; do grep -Fq "$pattern" "$KEYCHAIN" || exit 1; done
 for pattern in 'chatgpt.com/backend-api/wham/usage' 'CodexCredentialStore' 'NoRedirectDelegate'; do grep -Fq "$pattern" "$HTTP" || exit 1; done
 for pattern in 'CodexHTTPUsageClient' 'CodexCredentialStore' 'requestID' 'generation'; do grep -Fq "$pattern" "$COORD" || exit 1; done
-if rg -n 'CodexAppServerClient|CodexLoginCoordinator|CodexLocator|codexPath|codexHome|account/rateLimits/read|app-server' "$ROOT/MacOSApp/Sources" --glob '*.swift'; then
+if grep -R -n -E 'CodexAppServerClient|CodexLoginCoordinator|CodexLocator|codexPath|codexHome|account/rateLimits/read|app-server' "$ROOT/MacOSApp/Sources" --include='*.swift'; then
   echo "deprecated CLI/app-server runtime path remains in production sources" >&2
   exit 1
 fi

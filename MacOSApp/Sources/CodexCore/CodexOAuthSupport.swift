@@ -18,6 +18,12 @@ public struct CodexOAuthRequest: Equatable, Sendable {
     }
 }
 
+public struct CodexOAuthError: Error, Equatable, CustomStringConvertible, Sendable {
+    public let message: String
+    public init(_ message: String) { self.message = message }
+    public var description: String { message }
+}
+
 public struct CodexOAuthCallback: Equatable, Sendable {
     public let code: String
     public let state: String
@@ -28,7 +34,11 @@ public enum CodexOAuthSupport {
     public static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
     public static let scope = "openid profile email offline_access api.connectors.read api.connectors.invoke"
 
-    public static func makeRequest(port: UInt16, random: () -> Data = { randomBytes(count: 32) }) -> CodexOAuthRequest {
+    public static func makeRequest(port: UInt16) -> CodexOAuthRequest {
+        makeRequest(port: port, random: { randomBytes(count: 32) })
+    }
+
+    public static func makeRequest(port: UInt16, random: () -> Data) -> CodexOAuthRequest {
         let verifier = base64URL(random())
         let digest = SHA256.hash(data: Data(verifier.utf8))
         let challenge = base64URL(Data(digest))
@@ -53,17 +63,17 @@ public enum CodexOAuthSupport {
         return components?.url
     }
 
-    public static func validateCallback(_ url: URL, request: CodexOAuthRequest) -> Result<CodexOAuthCallback, String> {
-        guard url.scheme?.lowercased() == "http", url.host?.lowercased() == "localhost", url.path == "/auth/callback" else { return .failure("授权回调地址不匹配") }
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return .failure("授权回调无法解析") }
+    public static func validateCallback(_ url: URL, request: CodexOAuthRequest) -> Result<CodexOAuthCallback, CodexOAuthError> {
+        guard url.scheme?.lowercased() == "http", url.host?.lowercased() == "localhost", url.path == "/auth/callback" else { return .failure(CodexOAuthError("授权回调地址不匹配")) }
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return .failure(CodexOAuthError("授权回调无法解析")) }
         var values: [String: String] = [:]
         for item in components.queryItems ?? [] {
-            guard values[item.name] == nil else { return .failure("授权回调包含重复参数") }
+            guard values[item.name] == nil else { return .failure(CodexOAuthError("授权回调包含重复参数")) }
             values[item.name] = item.value ?? ""
         }
-        if let error = values["error"], !error.isEmpty { return .failure(values["error_description"].map { "授权被拒绝：\($0)" } ?? "授权被拒绝：\(error)") }
-        guard values["state"] == request.state else { return .failure("授权 state 校验失败") }
-        guard let code = values["code"], !code.isEmpty else { return .failure("授权回调缺少 code") }
+        if let error = values["error"], !error.isEmpty { return .failure(CodexOAuthError(values["error_description"].map { "授权被拒绝：\($0)" } ?? "授权被拒绝：\(error)")) }
+        guard values["state"] == request.state else { return .failure(CodexOAuthError("授权 state 校验失败")) }
+        guard let code = values["code"], !code.isEmpty else { return .failure(CodexOAuthError("授权回调缺少 code")) }
         return .success(CodexOAuthCallback(code: code, state: request.state))
     }
 
