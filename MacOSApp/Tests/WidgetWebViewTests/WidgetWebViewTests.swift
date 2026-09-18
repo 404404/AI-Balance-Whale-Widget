@@ -297,7 +297,7 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertEqual(expanded["bubbleVisible"] as? Bool, true)
         XCTAssertGreaterThan(rectValue(expanded, "bubble", "height"), 0)
         assertBubbleAboveWhale(expanded, label: "expanded bubble")
-        XCTAssertTrue((expanded["bubbleText"] as? String ?? "").contains("额度总览"), "settings dashboard step must render on the click bubble")
+        XCTAssertTrue((expanded["bubbleText"] as? String ?? "").contains("Codex"), "settings dashboard step must render the bound Codex account on the click bubble")
         XCTAssertEqual(expanded["menuHidden"] as? Bool, false)
         XCTAssertEqual(expanded["menuPinned"] as? Bool, true)
         print("WHALE_WEBKIT_GEOMETRY expanded app=\(rect(expanded, "app")) whale=\(rect(expanded, "whale")) bubble=\(rect(expanded, "bubble"))")
