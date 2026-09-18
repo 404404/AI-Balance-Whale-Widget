@@ -85,7 +85,7 @@ final class CodexHTTPUsageClient {
 
     private func finish(_ error: ProviderError, generation: Int, requestID: String?) {
         guard generation == self.generation else { return }
-        state = ProviderState(status: status(for: error), message: error.localizedDescription, accountKey: state.accountKey, email: state.email, planType: state.planType, authSource: "app-keychain", requestID: requestID)
+        state = ProviderState(status: status(for: error), message: error.localizedDescription, email: state.email, planType: state.planType, accountKey: state.accountKey, authSource: "app-keychain", requestID: requestID)
         emit()
     }
 
