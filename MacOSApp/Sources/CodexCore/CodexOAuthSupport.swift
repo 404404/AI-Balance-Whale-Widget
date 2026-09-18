@@ -34,6 +34,13 @@ public enum CodexOAuthSupport {
     public static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
     public static let scope = "openid profile email offline_access api.connectors.read api.connectors.invoke"
 
+    // Codex CLI registers these loopback callback ports with the OAuth
+    // application. The app must use one of them instead of an ephemeral
+    // port, otherwise auth.openai.com rejects the authorize request before
+    // the user can even sign in. 1457 is the same fallback used by Codex
+    // when another local process owns the primary port.
+    public static let registeredCallbackPorts: [UInt16] = [1455, 1457]
+
     public static func makeRequest(port: UInt16) -> CodexOAuthRequest {
         makeRequest(port: port, random: { randomBytes(count: 32) })
     }

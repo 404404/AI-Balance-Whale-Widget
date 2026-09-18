@@ -54,6 +54,19 @@ final class BrowserAuthAcceptanceTests: XCTestCase {
         XCTAssertTrue(usage.contains("CodexCredentialStore"))
     }
 
+    func testCodexOAuthUsesRegisteredLoopbackCallbackPorts() throws {
+        XCTAssertEqual(CodexOAuthSupport.registeredCallbackPorts, [1455, 1457])
+        for port in CodexOAuthSupport.registeredCallbackPorts {
+            let request = CodexOAuthSupport.makeRequest(port: port, random: { Data(repeating: 9, count: 32) })
+            let url = try XCTUnwrap(CodexOAuthSupport.authorizationURL(request: request))
+            let redirect = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "redirect_uri" })?.value
+            XCTAssertEqual(redirect, "http://localhost:" + String(port) + "/auth/callback")
+        }
+        let coordinator = try String(contentsOf: repository().appendingPathComponent("MacOSApp/Sources/AIBalanceWhale/CodexOAuthCoordinator.swift"))
+        XCTAssertTrue(coordinator.contains("registeredCallbackPorts"))
+        XCTAssertFalse(coordinator.contains("port: 0"), "OAuth must not advertise an ephemeral callback port")
+    }
+
     func testCallbacksRejectMismatchReplayAndLateCompletion() throws {
         let req = request()
         let valid = URL(string: "http://localhost:41723/auth/callback?code=one&state=\(req.state)")!

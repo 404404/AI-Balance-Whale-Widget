@@ -88,6 +88,8 @@ var css = [
   '.dshwv-root.dshwv-left{transform:scaleX(-1)}',
   '.dshwv-root.dshwv-dragging{cursor:grabbing;transition:none}',
   '.dshwv-body{position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:50% 100%;transition:transform .22s cubic-bezier(.34,1.56,.64,1)}',
+  '@keyframes dshwv-press-q{0%{transform:scaleY(.88) scaleX(1.05)}35%{transform:scaleY(1.035) scaleX(.985)}68%{transform:scaleY(.975) scaleX(1.012)}100%{transform:scaleY(1) scaleX(1)}}',
+  '.dshwv-body.dshwv-press-bounce{animation:dshwv-press-q .36s cubic-bezier(.22,.8,.32,1) both}',
   '.dshwv-img{position:absolute;right:0;bottom:0;width:59.45%;height:59.45%;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none;object-fit:contain;object-position:right bottom}',
   '.dshwv-pop{position:absolute;left:0;top:0;width:100%;aspect-ratio:1026/700;pointer-events:none;z-index:1;--dshw-u:calc(var(--dshw-base) / 1026)}',
   // 纵深防御：泡泡容器必须透明，形状由内部 SVG 绘制；用 !important 压掉外部
@@ -604,10 +606,10 @@ function showEditorOverlay(overlay) {
     var host = document.getElementById('upstreamEditorMount') || window.__AIWhaleEditorMount || editorMount
     if (host && overlay.parentNode !== host) host.appendChild(overlay)
     overlay.classList.add('dshwv-editor-inline-overlay')
-    overlay.style.position = 'absolute'
-    overlay.style.inset = '0'
+    overlay.style.position = 'relative'
+    overlay.style.inset = 'auto'
     overlay.style.background = 'transparent'
-    overlay.style.zIndex = '1'
+    overlay.style.zIndex = 'auto'
     overlay.style.alignItems = 'flex-start'
     overlay.style.justifyContent = 'flex-start'
     overlay.style.overflow = 'visible'
@@ -1197,7 +1199,16 @@ bubbleCustomBtn.className = 'dshwv-roleimport'
 bubbleCustomBtn.style.flex = '1'
 bubbleCustomBtn.textContent = '自定义泡泡'
 bubbleCustomBtn.title = '打开“自定义泡泡”设置'
-bubbleCustomBtn.addEventListener('click', function (e) { e.stopPropagation(); openBubbleEditor() })
+bubbleCustomBtn.addEventListener('click', function (e) {
+  e.stopPropagation()
+  // Standalone macOS routes this action to the single native Settings window.
+  if (window.__AIWhaleStandalone && window.__AIWhaleNativePost) {
+    closeMenu()
+    window.__AIWhaleNativePost('openSettings', { page: 'bubbles' })
+    return
+  }
+  openBubbleEditor()
+})
 row6.appendChild(bubbleCustomBtn)
 var menuSep1 = document.createElement('div')
 menuSep1.className = 'dshwv-menu-sep'
@@ -8148,8 +8159,8 @@ bubbleCard.appendChild(bubbleBtns)
 bubbleMask.appendChild(bubbleCard)
 if (editorMount) {
   editorMount.appendChild(bubbleMask)
-  bubbleMask.style.position = 'absolute'
-  bubbleMask.style.inset = '0'
+  bubbleMask.style.position = 'relative'
+  bubbleMask.style.inset = 'auto'
   bubbleMask.style.background = 'transparent'
   bubbleMask.style.overflow = 'auto'
   bubbleMask.style.alignItems = 'flex-start'
@@ -10232,7 +10243,12 @@ function applyStandaloneNativeState() {
       window.__AIWhaleAppliedStepsKey = JSON.stringify(canonical)
       bubbleCfg = JSON.parse(JSON.stringify(canonical))
       bubbleLib = Array.isArray(canonical.lib) ? JSON.parse(JSON.stringify(canonical.lib)) : []
-      bubbleTapAdvance = canonical.tapAdvance === true
+      var canonicalAdvance = typeof canonical.tapAdvance === 'boolean' ? canonical.tapAdvance : null
+      if (canonicalAdvance === null) {
+        var legacyBubble = incoming.bubble && typeof incoming.bubble === 'object' ? incoming.bubble : {}
+        canonicalAdvance = typeof legacyBubble.advanceOnClick === 'boolean' ? legacyBubble.advanceOnClick : true
+      }
+      bubbleTapAdvance = canonicalAdvance
       applyBubbleCfgSeq()
       if (bubbleShown && canonicalChanged) {
         bubbleSeqIdx = 0
@@ -10250,7 +10266,9 @@ function applyStandaloneNativeState() {
       bubbleCfg = stepsToBubbleCfg(steps)
       bubbleLib = []
       var incomingBubble = incoming.bubble && typeof incoming.bubble === 'object' ? incoming.bubble : {}
-      bubbleTapAdvance = incomingBubble.advanceOnClick === true
+      // Missing legacy values mean the upstream default: clicking the
+      // character advances the queue. Only an explicit false disables it.
+      bubbleTapAdvance = incomingBubble.advanceOnClick !== false
       applyBubbleCfgSeq()
       if (bubbleShown && stepsChanged) {
         bubbleSeqIdx = 0
@@ -12743,6 +12761,7 @@ var pressing = false
 var pressEnded = false
 var releasePlayed = false
 var releaseTimer = null
+var pressBounceTimer = null
 function applySoundSet() {
   try {
     // v729：切音效组 / 开关音效时把本轮播放状态一并复位，
@@ -12805,12 +12824,22 @@ function playRelease() {
   } catch (err) {}
 }
 function pressDown() {
+  if (pressBounceTimer) { clearTimeout(pressBounceTimer); pressBounceTimer = null }
+  try {
+    body.classList.remove('dshwv-press-bounce')
+    void body.offsetWidth
+    body.classList.add('dshwv-press-bounce')
+    pressBounceTimer = setTimeout(function () {
+      pressBounceTimer = null
+      try { body.classList.remove('dshwv-press-bounce') } catch (err) {}
+    }, 380)
+  } catch (err) {}
   body.style.transform = SQUISH
   pressing = true
   playPress()
 }
 function pressUp() {
-  body.style.transform = 'scaleY(1) scaleX(1)'
+  body.style.transform = ''
   pressing = false
   if (pressEnded) {
     // hold (or released after Ya1 finished) → Ya2 now

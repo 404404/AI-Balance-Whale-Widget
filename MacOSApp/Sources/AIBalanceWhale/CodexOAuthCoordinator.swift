@@ -12,43 +12,65 @@ final class CodexOAuthCoordinator {
     private var request: CodexOAuthRequest?
     private var consumedState: String?
     private var timeoutWork: DispatchWorkItem?
+    private var callbackPortIndex = 0
 
     func start() {
         queue.async { [weak self] in
             guard let self else { return }
             self.cancelLocked(notify: false)
-            let parameters = NWParameters.tcp
-            parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host("127.0.0.1"), port: NWEndpoint.Port(rawValue: 0)!)
-            guard let listener = try? NWListener(using: parameters) else { self.finish(.launch("无法监听本机授权回调")); return }
-            self.listener = listener
-            listener.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                switch state {
-                case .ready:
-                    guard let port = listener.port?.rawValue else { self.finish(.launch("授权回调端口不可用")); return }
-                    let request = CodexOAuthSupport.makeRequest(port: port)
-                    self.request = request
-                    guard let url = CodexOAuthSupport.authorizationURL(request: request) else { self.finish(.launch("无法生成授权地址")); return }
-                    self.timeoutWork?.cancel()
-                    let timeout = DispatchWorkItem { [weak self] in self?.queue.async { self?.finish(.timeout(stage: "浏览器授权", seconds: 600)) } }
-                    self.timeoutWork = timeout
-                    self.queue.asyncAfter(deadline: .now() + 600, execute: timeout)
-                    DispatchQueue.main.async { NSWorkspace.shared.open(url) }
-                case .failed(let error): self.finish(.offline("回调监听失败：\(error.localizedDescription)"))
-                case .cancelled: break
-                default: break
-                }
-            }
-            listener.newConnectionHandler = { [weak self] connection in
-                guard let self else { return }
-                connection.stateUpdateHandler = { state in
-                    if case .failed(let error) = state { self.finish(.offline("授权回调连接失败：\(error.localizedDescription)")) }
-                }
-                connection.start(queue: self.queue)
-                self.receive(connection, data: Data())
-            }
-            listener.start(queue: self.queue)
+            self.callbackPortIndex = 0
+            self.startListenerLocked()
         }
+    }
+
+    private func startListenerLocked() {
+        guard callbackPortIndex < CodexOAuthSupport.registeredCallbackPorts.count else { finish(.launch("无法监听 Codex 授权回调端口 1455/1457；请关闭占用这些端口的旧授权窗口后重试")); return }
+        let callbackPort = CodexOAuthSupport.registeredCallbackPorts[callbackPortIndex]
+        let parameters = NWParameters.tcp
+        guard let port = NWEndpoint.Port(rawValue: callbackPort) else { finish(.launch("Codex 授权回调端口无效")); return }
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host("127.0.0.1"), port: port)
+        guard let listener = try? NWListener(using: parameters) else { retryListenerLocked(); return }
+        self.listener = listener
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            guard self.listener === listener else { return }
+            switch state {
+            case .ready:
+                guard let port = listener.port?.rawValue else { self.finish(.launch("授权回调端口不可用")); return }
+                let request = CodexOAuthSupport.makeRequest(port: port)
+                self.request = request
+                guard let url = CodexOAuthSupport.authorizationURL(request: request) else { self.finish(.launch("无法生成授权地址")); return }
+                self.timeoutWork?.cancel()
+                let timeout = DispatchWorkItem { [weak self] in self?.finish(.timeout(stage: "浏览器授权", seconds: 600)) }
+                self.timeoutWork = timeout
+                self.queue.asyncAfter(deadline: .now() + 600, execute: timeout)
+                DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            case .failed:
+                self.retryListenerLocked()
+            case .cancelled: break
+            default: break
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            guard let self else { return }
+            connection.stateUpdateHandler = { [weak self] state in
+                guard let self else { return }
+                if case .failed(let error) = state { self.finish(.offline("授权回调连接失败：" + error.localizedDescription)) }
+            }
+            connection.start(queue: self.queue)
+            self.receive(connection, data: Data())
+        }
+        listener.start(queue: queue)
+    }
+
+    private func retryListenerLocked() {
+        timeoutWork?.cancel()
+        timeoutWork = nil
+        listener?.cancel()
+        listener = nil
+        request = nil
+        callbackPortIndex += 1
+        startListenerLocked()
     }
 
     func cancel() { queue.async { [weak self] in self?.cancelLocked(notify: true) } }
@@ -127,7 +149,7 @@ final class CodexOAuthCoordinator {
 
     private func finish(_ error: ProviderError?) {
         timeoutWork?.cancel(); timeoutWork = nil
-        listener?.cancel(); listener = nil; request = nil
+        listener?.cancel(); listener = nil; request = nil; consumedState = nil
         DispatchQueue.main.async { [weak self] in self?.onResult?(error) }
     }
 }
