@@ -126,15 +126,15 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
         return '<div style="margin-top:6px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(a.name) + '</span><span class="mono">' + esc(label) + "</span></div><div class=\"meter\"><i style=\"width:" + pct + '%"></i></div></div>';
       }).join("") + "</div>";
     }
-    if (mod.type === "quota") {
-      var acc = (accs || []).filter(function (a) { return a.id === mod.accountId; })[0];
+    if (mod.type === "quota" || mod.type === "plan") {
+      var acc = (accs || []).filter(function (a) { return a.id === (mod.accountId || mod.modelId); })[0];
       var w = acc && ((acc.windows || []).filter(function (x) { return x.id === mod.windowId; })[0] || acc.windows[0]);
       if (!acc || !w) return '<p class="note">未配置该订阅</p>';
       if (mod.field === "remain") return '<p class="mono" style="margin:0;font-size:20px">' + remainLabel(w.remainPct) + "</p>";
       if (mod.field === "reset") return '<p class="note" style="margin:0">' + formatReset(w.resetAt) + "</p>";
       return '<div style="width:180px;text-align:left"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(w.label) + '</span><span class="mono">' + remainLabel(w.remainPct) + '</span></div><div class="meter"><i style="width:' + Number(w.remainPct || 0) + '%"></i></div><p class="note" style="margin:4px 0 0">' + formatReset(w.resetAt) + "</p></div>";
     }
-    var bal = (accs || []).filter(function (a) { return a.id === mod.accountId; })[0];
+    var bal = (accs || []).filter(function (a) { return a.id === (mod.accountId || mod.modelId); })[0];
     if (!bal) return '<p class="note">未配置该余额账户</p>';
     return '<div><p class="mono" style="margin:0;font-size:22px">' + money(bal) + '</p><p class="note" style="margin:4px 0 0">' + esc(bal.message || "") + "</p></div>";
   }
@@ -193,7 +193,7 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
   function codexCard() {
     var c = (m.app && m.app.connection) || {}, ready = c.status === "ready";
     var buckets = (c.buckets || []).map(function (b) {
-      return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(b.label || "额度窗口") + '</span><span class="mono">剩余 ' + remainLabel(b.remainingPct) + '</span></div><div class="meter"><i style="width:' + (Number.isFinite(Number(b.remainingPct)) ? Number(b.remainingPct) : 0) + '%"></i></div></div>';
+      return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(b.label || "额度窗口") + '</span><span class="mono">剩余 ' + remainLabel(b.remainPct) + '</span></div><div class="meter"><i style="width:' + (Number.isFinite(Number(b.remainPct)) ? Number(b.remainPct) : 0) + '%"></i></div></div>';
     }).join("");
     var identity = c.email || c.accountID || "未连接账户";
     var details = ready ? (' · ' + esc(identity) + (c.plan ? ' · ' + esc(c.plan) : '') + (c.lastUpdated ? ' · 更新于 ' + esc(new Date(c.lastUpdated).toLocaleString()) : '')) : '';
@@ -229,12 +229,12 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
   }
   function moduleEditor(mod, si, mi, accs) {
     var subs = "", bals = "";
-    accs.filter(function (a) { return a.kind === "subscription"; }).forEach(function (a) { subs += '<option value="' + esc(a.id) + '"' + (mod.accountId === a.id ? " selected" : "") + ">" + esc(a.name) + "</option>"; });
-    accs.filter(function (a) { return a.kind === "balance"; }).forEach(function (a) { bals += '<option value="' + esc(a.id) + '"' + (mod.accountId === a.id ? " selected" : "") + ">" + esc(a.name) + "</option>"; });
+    accs.filter(function (a) { return a.kind === "subscription"; }).forEach(function (a) { subs += '<option value="' + esc(a.id) + '"' + ((mod.accountId || mod.modelId) === a.id ? " selected" : "") + ">" + esc(a.name) + "</option>"; });
+    accs.filter(function (a) { return a.kind === "balance"; }).forEach(function (a) { bals += '<option value="' + esc(a.id) + '"' + ((mod.accountId || mod.modelId) === a.id ? " selected" : "") + ">" + esc(a.name) + "</option>"; });
     var extra = "";
     if (mod.type === "text") extra = '<label class="field">文本<input class="mtxt" value="' + esc(mod.text || "") + '"></label>';
-    if (mod.type === "quota") {
-      var acc = accs.filter(function (a) { return a.id === mod.accountId; })[0] || accs.filter(function (a) { return a.kind === "subscription"; })[0] || {};
+    if (mod.type === "quota" || mod.type === "plan") {
+      var acc = accs.filter(function (a) { return a.id === (mod.accountId || mod.modelId); })[0] || accs.filter(function (a) { return a.kind === "subscription"; })[0] || {};
       var wins = (acc.windows || []).map(function (w) { return '<option value="' + esc(w.id) + '"' + (mod.windowId === w.id ? " selected" : "") + ">" + esc(w.label || w.id) + "</option>"; }).join("");
       extra = '<label class="field">账户<select class="macc">' + subs + "</select></label><label class=\"field\">额度窗<select class=\"mwin\">" + (wins || "<option value=\"\">默认</option>") + "</select></label>";
     }

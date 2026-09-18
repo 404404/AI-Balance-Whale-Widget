@@ -11276,6 +11276,8 @@ function bubbleContentTokenMap(m) {
   m = m || {}
   var v = ''
   var map = {}
+  var standaloneMap = standaloneCodexTokenMap(m)
+  if (standaloneMap) return standaloneMap
   // 自定义模型模块：{balance}/{today} 取该模型自己的数据，并兼容旧的 _ds 写法
   if (bubbleIsModelMod(m) && (m.type === 'balance' || m.type === 'today' || m.type === 'quota' || m.type === 'plan')) {
     map['balance'] = apiModelBalanceText(m.modelId)
@@ -11706,6 +11708,52 @@ function bubblePeakRowApply(x, peak) {
   } catch (err) {}
 }
 // v209: 计算单个模块要显示的行文本(与随机选中行),每次全新计算、不跨行复用状态
+function standaloneCodexAccount(mod) {
+  if (!window.__AIWhaleStandalone) return null
+  var id = mod && (mod.accountId || mod.modelId)
+  var accounts = whaleNowdexAccounts()
+  var account = accounts.filter(function (a) { return a && a.enabled !== false && a.id === id })[0]
+  // Legacy editor entries sometimes identify the provider rather than the
+  // canonical account id. Resolve only Codex, never an unrelated account.
+  if (!account && (!id || id === "codex")) account = accounts.filter(function (a) { return a && a.enabled !== false && (a.provider === "codex" || a.id === "codex") })[0]
+  if (!account || (account.provider !== "codex" && account.id !== "codex")) return null
+  return account
+}
+function standaloneCodexQuota(mod) {
+  if (!mod || (mod.type !== "quota" && mod.type !== "plan")) return null
+  var account = standaloneCodexAccount(mod)
+  if (!account) return null
+  var windows = Array.isArray(account.windows) ? account.windows.filter(function (w) {
+    if (!w) return false
+    var remain = Number(w.remainPct), used = Number(w.usedPct)
+    return (isFinite(remain) && remain >= 0 && remain <= 100) || (isFinite(used) && used >= 0 && used <= 100)
+  }) : []
+  if (!windows.length) return null
+  var wanted = mod && mod.windowId != null ? String(mod.windowId) : ""
+  var win = wanted ? windows.filter(function (w) { return String(w.id || "") === wanted })[0] : null
+  if (!win && wanted) {
+    var secondary = wanted === "secondary" || wanted === "weekly" || wanted === "week" || wanted === "other"
+    win = windows.filter(function (w) { return String(w.id || "").indexOf(secondary ? "secondary" : "primary") === 0 })[0]
+  }
+  if (!win) win = windows[0]
+  var remain = Number(win.remainPct), used = Number(win.usedPct)
+  if (!isFinite(remain) && isFinite(used)) remain = 100 - used
+  if (!isFinite(used) && isFinite(remain)) used = 100 - remain
+  if (!isFinite(remain) || !isFinite(used) || remain < 0 || remain > 100 || used < 0 || used > 100) return null
+  return { account: account, window: win, remainPct: remain, usedPct: used }
+}
+function standaloneCodexTokenMap(mod) {
+  var info = standaloneCodexQuota(mod)
+  if (!info) return null
+  var used = Math.round(info.usedPct) + "%"
+  var remain = Math.round(info.remainPct) + "%"
+  var reset = whaleFormatReset(info.window.resetAt)
+  return {
+    quota: used, quota_pct: used, quota_used: used, quota_left: remain, quota_total: "100%", quota_reset: reset, remain: remain, left: remain, used: used, reset: reset, window: info.window.label || "额度窗口",
+    plan: used, plan_used: used, plan_left: remain, plan_reset: reset,
+    balance: "--", today: "--", balance_ds: "--", expense_ds: "--"
+  }
+}
 function standaloneMetricText(mod) {
   var m = mod || {}
   var accounts = whaleNowdexAccounts()
@@ -11720,15 +11768,16 @@ function standaloneMetricText(mod) {
   if (m.type !== 'quota' && m.type !== 'plan' && m.type !== 'balance') return null
   // modelId is the beta field; it is an explicit account binding, not a
   // fallback to whichever account happens to be first.
+  var official = (m.type === "quota" || m.type === "plan") ? standaloneCodexQuota(m) : null
   var accountID = m.accountId || m.modelId
-  var account = accounts.filter(function (a) { return a && a.id === accountID && a.enabled !== false })[0]
+  var account = official ? official.account : accounts.filter(function (a) { return a && a.id === accountID && a.enabled !== false })[0]
   if (!account) return '账户未连接'
   if (m.type === 'balance') {
     var money = whaleMoney(account)
     return bubbleContentText(m, money)
   }
-  var windows = Array.isArray(account.windows) ? account.windows : []
-  var win = m.windowId ? windows.filter(function (w) { return w && w.id === m.windowId })[0] : windows[0]
+  var windows = official ? [official.window] : (Array.isArray(account.windows) ? account.windows : [])
+  var win = official ? official.window : (m.windowId ? windows.filter(function (w) { return w && w.id === m.windowId })[0] : windows[0])
   if (!win) return bubbleContentText(m, '额度窗口不可用')
   var raw
   var field = m.field || (m.type === 'plan' ? 'remain' : 'summary')
@@ -11738,8 +11787,8 @@ function standaloneMetricText(mod) {
   else if (field === 'full' || field === 'summary') raw = (win.label || '额度') + ' · 剩 ' + whaleRemainLabel(win.remainPct) + ' · ' + whaleFormatReset(win.resetAt)
   else raw = whaleRemainLabel(win.remainPct)
   if (m.tpl) {
-    var map = { remain: whaleRemainLabel(win.remainPct), left: whaleRemainLabel(win.remainPct), remaining: whaleRemainLabel(win.remainPct), used: (typeof win.usedPct === 'number' && isFinite(win.usedPct)) ? Math.round(win.usedPct) + '%' : '—', reset: whaleFormatReset(win.resetAt), window: win.label || '额度窗口' }
-    raw = String(m.tpl).replace(/\{([^}]+)\}/g, function (_, key) { return map[key] == null ? '{' + key + '}' : map[key] })
+    var map = standaloneCodexTokenMap(m) || { remain: whaleRemainLabel(win.remainPct), left: whaleRemainLabel(win.remainPct), remaining: whaleRemainLabel(win.remainPct), used: (typeof win.usedPct === "number" && isFinite(win.usedPct)) ? Math.round(win.usedPct) + "%" : "—", reset: whaleFormatReset(win.resetAt), window: win.label || "额度窗口" }
+    raw = String(m.tpl).replace(/\{([^}]+)\}/g, function (_, key) { return map[key] == null ? "{" + key + "}" : map[key] })
   }
   return raw
 }
