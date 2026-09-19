@@ -336,7 +336,7 @@ if (!lock) {
     const icon = nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 });
     if (process.platform === 'darwin' && app.dock) app.dock.setIcon(icon);
     tray = new Tray(icon);
-    if (process.platform === 'darwin') tray.setTemplateImage(false);
+    if (process.platform === 'darwin' && typeof tray.setTemplateImage === 'function') tray.setTemplateImage(false);
     tray.setToolTip('AI Balance Whale');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '显示 / 隐藏小鲸鱼', click: toggle },
