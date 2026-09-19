@@ -7,7 +7,7 @@ VERSION="${VERSION:-$(node -p "require('./package.json').version")}"
 BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 DIST="$ROOT/dist"
 ICON="$ROOT/build/AI Balance Whale.icns"
-rm -rf "$DIST/AI Balance Whale.app" "$DIST/AI Balance Whale-darwin-arm64" "$ROOT/build"
+rm -rf "$DIST" "$ROOT/build"
 mkdir -p "$DIST" "$ROOT/build"
 bash scripts/make-mac-icon.sh assets/DSniang1.png "$ICON"
 
@@ -22,7 +22,7 @@ npx electron-packager . "AI Balance Whale" \
   --app-version="$VERSION" \
   --build-version="$BUILD_NUMBER" \
   --icon="$ICON" \
-  --ignore='(^|/)(\.git|dist|build|qa-output|tests)(/|$)'
+  --ignore='^dist(/|$)|(^|/)(\.git|build|qa-output|tests)(/|$)'
 
 PACKAGED="$DIST/AI Balance Whale-darwin-arm64/AI Balance Whale.app"
 if [[ ! -d "$PACKAGED" ]]; then
