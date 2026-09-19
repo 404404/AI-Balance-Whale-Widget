@@ -18,6 +18,7 @@ const dataDir = path.resolve(explicitDataDir || process.env.WHALE_HOME || defaul
 const startupAt = Date.now();
 const startup = { revision: 'mac-standalone-0.1.0', requestedAt: Number(process.env.WHALE_LAUNCH_TIME) || startupAt, mainAt: startupAt, mode: 'standalone', phases: {} };
 const markStartup = phase => { if (startup.phases[phase] == null) startup.phases[phase] = Date.now() - startup.requestedAt; };
+const writeStartup = () => fs.promises.writeFile(path.join(dataDir, "startup-timings.json"), JSON.stringify(startup, null, 2)).catch(() => {});
 markStartup('main');
 
 if (!path.isAbsolute(dataDir)) app.exit(1);
@@ -115,7 +116,7 @@ function visibility() {
     if (!window.isVisible()) window.showInactive();
     if (startup.phases.interactive == null) {
       markStartup('interactive');
-      fs.promises.writeFile(path.join(dataDir, 'startup-timings.json'), JSON.stringify(startup, null, 2)).catch(() => {});
+      writeStartup();
     }
   } else if (window.isVisible()) window.hide();
 }
@@ -359,6 +360,7 @@ if (!lock) {
     }
     await window.loadURL(UI_ORIGIN + '/widget.html');
     markStartup('pageLoaded');
+    writeStartup();
     visibilityWatchdog = setInterval(visibility, 1000);
     if (visibilityWatchdog.unref) visibilityWatchdog.unref();
     app.once('will-quit', () => {
