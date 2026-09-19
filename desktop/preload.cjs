@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('whaleDesktop', {
     trustedClickAt = 0;
     return ipcRenderer.invoke('whale-open-external', value);
   },
-  testMode: process.argv.includes('--whale-render-test'),
+  testMode: process.argv.includes('--whale-render-test') || process.env.WHALE_DESKTOP_TEST === '1',
   standalone: process.platform === 'darwin' || process.argv.includes('--standalone'),
   surface: expanded => ipcRenderer.send('whale-surface', !!expanded),
   widgetSize: size => {

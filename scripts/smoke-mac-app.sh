@@ -42,7 +42,7 @@ run_case() {
   if [[ "$legacy" == 1 ]]; then
     printf '{"version":1,"frame":{"x":100,"y":100,"width":248,"height":274}}\n' > "$DATA/window-state.json"
   fi
-  ELECTRON_ENABLE_LOGGING=1 WHALE_HOME="$DATA" "$APP/Contents/MacOS/AI Balance Whale" \
+  ELECTRON_ENABLE_LOGGING=1 WHALE_DESKTOP_TEST=1 WHALE_HOME="$DATA" "$APP/Contents/MacOS/AI Balance Whale" \
     --standalone --whale-render-test --enable-logging=stderr --whale-data="$DATA" >"$LOG" 2>&1 &
   PID=$!
   for _ in $(seq 1 90); do
