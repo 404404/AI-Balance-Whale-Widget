@@ -133,7 +133,8 @@ final class BrowserAuthAcceptanceTests: XCTestCase {
         let raw = Data("OPTIONS /callback HTTP/1.1\r\nOrigin: https://auth.x.ai\r\nAccess-Control-Request-Private-Network: true\r\n\r\n".utf8)
         let parsed = try XCTUnwrap(GrokOAuthSupport.parseLoopback(raw))
         XCTAssertEqual(parsed.method, "OPTIONS")
-        XCTAssertTrue(parsed.requestsPrivateNetwork)
+        XCTAssertEqual(parsed.origin, "https://auth.x.ai")
+        XCTAssertTrue(parsed.requestsPrivateNetwork, "PNA preflight must be detected so Grok login does not fall back to paste-code")
         let preflight = GrokOAuthSupport.httpResponse(status: 204, origin: "https://auth.x.ai", allowPrivateNetwork: true, html: "")
         let header = String(data: preflight, encoding: .utf8) ?? ""
         XCTAssertTrue(header.contains("Access-Control-Allow-Private-Network: true"))
