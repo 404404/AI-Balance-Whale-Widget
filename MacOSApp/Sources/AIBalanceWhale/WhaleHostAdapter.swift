@@ -285,75 +285,56 @@ final class WhaleHostAdapter {
     }
 
     private func apiModelsPayload() -> [String: Any] {
-        let state = ownerState()
-        let snapshots = AccountCatalog.windows(from: state.buckets)
-        let windows: [[String: Any]] = snapshots.map { window in
-            [
-                "key": window.id,
-                "id": window.id,
-                "label": window.label,
-                "usedPct": window.usedPct,
-                "remainPct": window.remainPct,
-                "resetAt": window.resetAt.map { NSNumber(value: $0) } ?? NSNull()
-            ]
+        let accounts = WhaleConfigurationStore.shared.publicAccounts()
+        var models: [[String: Any]] = []
+        for account in accounts {
+            let id = account["id"] as? String ?? ""
+            let provider = account["provider"] as? String ?? id
+            let kind = account["kind"] as? String ?? "balance"
+            let windows = account["windows"] as? [[String: Any]] ?? []
+            let subscription = kind == "subscription"
+            let connected = subscription ? !windows.isEmpty : account["remaining"] != nil
+            let plan: [String: Any]
+            if subscription {
+                plan = connected
+                    ? ["ok": true, "windows": windows, "level": account["name"] ?? NSNull()]
+                    : ["ok": false, "error": account["message"] ?? "尚未连接", "hide": false]
+            } else {
+                plan = ["ok": false, "hide": true]
+            }
+            models.append([
+                "id": id,
+                "accountId": id,
+                "name": account["name"] ?? id,
+                "provider": provider,
+                "kind": kind,
+                "builtin": AccountCatalog.coreAccountIDs.contains(id),
+                "currency": account["currency"] ?? NSNull(),
+                "balance": subscription ? NSNull() : (account["remaining"] ?? NSNull()),
+                "remaining": account["remaining"] ?? NSNull(),
+                "total": account["total"] ?? NSNull(),
+                "used": account["used"] ?? NSNull(),
+                "todayUsage": NSNull(),
+                "balanceMode": subscription ? "subscription" : "balance",
+                "usageSource": subscription ? "official-subscription" : "provider-api",
+                "planSupport": subscription,
+                "plan": plan,
+                "windows": windows,
+                "status": account["status"] ?? "idle",
+                "message": account["message"] ?? "",
+                "updatedAt": account["updatedAt"] ?? NSNull(),
+                "codex": provider == "codex" ? ["ok": true, "error": NSNull()] : NSNull(),
+            ])
         }
-        let plan: [String: Any] = state.status == .ready || state.status == .stale
-            ? ["ok": true, "windows": windows, "level": state.planType ?? NSNull()]
-            : ["ok": false, "error": state.message, "hide": false]
-        let model: [String: Any] = [
-            "id": "codex", "accountId": state.accountKey ?? "codex", "name": "Codex（ChatGPT 订阅）", "provider": "codex",
-            "builtin": true, "currency": NSNull(), "balance": NSNull(), "todayUsage": NSNull(),
-            "balanceMode": "subscription", "usageSource": "official-subscription",
-            "planSupport": true, "plan": plan, "windows": windows,
-            "codex": ["ok": true, "error": NSNull()]
-        ]
         var templates = ProviderTemplates.all.map { item -> [String: Any] in
             var result = item
-            if let templateID = result["id"] as? String, templateID == "deepseek" {
+            if let templateID = result["id"] as? String, AccountCatalog.coreAccountIDs.contains(templateID) {
                 result["builtin"] = true
-            }
-            if (result["id"] as? String) == "codex" {
-                result["builtin"] = true
-                result["quota"] = ["json": ["windows": windows.map { ["key": $0["id"] as? String ?? ""] }]]
             }
             return result
         }
-        if !templates.contains(where: { ($0["id"] as? String) == "codex" }) {
-            templates.append(["id": "codex", "name": "Codex（ChatGPT 订阅）", "quota": ["json": ["windows": windows.map { ["key": $0["id"] ?? ""] }]]])
-        }
-        var models: [[String: Any]] = [model]
-        var balanceByID: [String: [String: Any]] = [:]
-        for item in externalBalances() {
-            if let id = item["id"] as? String { balanceByID[id] = item }
-        }
-        let configured = WhaleConfigurationStore.shared.snapshot()["providers"] as? [[String: Any]] ?? []
-        for raw in configured {
-            guard let id = raw["id"] as? String, id != "codex" else { continue }
-            var item = raw
-            item["builtin"] = id == "deepseek"
-            item["provider"] = raw["provider"] as? String ?? id
-            item["name"] = raw["name"] as? String ?? id
-            item["planSupport"] = (raw["kind"] as? String) == "quota"
-            item["balanceMode"] = (raw["noBalanceApi"] as? Bool) == true ? "events" : "balance"
-            item["usageSource"] = (raw["noBalanceApi"] as? Bool) == true ? "local-session-events" : "provider-api"
-            item["canAdjustBalance"] = id == "deepseek"
-            if let current = balanceByID[id] {
-                item["status"] = current["status"] ?? "unknown"
-                item["message"] = current["message"] ?? ""
-                item["error"] = (current["status"] as? String) == "error" ? current["message"] : NSNull()
-                item["balance"] = current["remaining"] ?? NSNull()
-                item["total"] = current["total"] ?? NSNull()
-                item["used"] = current["used"] ?? NSNull()
-                item["updatedAt"] = current["updatedAt"] ?? NSNull()
-            } else {
-                item["status"] = "unavailable"
-                item["message"] = "等待第一次刷新"
-                item["balance"] = NSNull()
-            }
-            if item["balanceDesc"] == nil {
-                item["balanceDesc"] = ["url": raw["balanceURL"] ?? "", "auth": raw["auth"] ?? "Bearer {key}", "json": ["remaining": raw["valuePath"] ?? "", "total": raw["totalPath"] ?? "", "used": raw["usedPath"] ?? "", "scale": raw["scale"] ?? 1]]
-            }
-            models.append(item)
+        for extra in ["codex", "grok", "cursor"] where !templates.contains(where: { ($0["id"] as? String) == extra }) {
+            templates.append(["id": extra, "name": AccountCatalog.providerMeta[extra]?["label"] ?? extra, "quota": ["json": ["windows": []]]])
         }
         return ["ok": true, "models": models, "templates": templates]
     }

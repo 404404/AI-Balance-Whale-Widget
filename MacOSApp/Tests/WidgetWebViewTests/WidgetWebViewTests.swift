@@ -37,12 +37,24 @@ class WidgetWebViewTests: XCTestCase {
                         "appearance": ["snapEnabled": true, "showMenuButton": true],
                         "sound": ["enabled": true],
                         "bubble": ["steps": [["id": "step-dash", "modules": [["type": "dashboard"]]]]],
-                        "accounts": [["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]]],
+                        "accounts": [
+                            ["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]],
+                            ["id": "grok", "name": "Grok", "provider": "grok", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "week", "label": "本周", "remainPct": 44, "usedPct": 56]]],
+                            ["id": "cursor", "name": "Cursor", "provider": "cursor", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "cursor", "label": "Cursor 模型", "remainPct": 71, "usedPct": 29]]],
+                        ],
                         "reminders": ["enabled": true, "threshold": 15],
                         "records": [:]
                     ],
-                    "accounts": [["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]]],
-                    "providerMeta": ["codex": ["label": "Codex / ChatGPT", "help": "test", "tokenHint": "本机 Codex 登录态"]],
+                    "accounts": [
+                        ["id": "codex", "name": "Codex", "provider": "codex", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "5h", "label": "5 小时", "remainPct": 62, "usedPct": 38]]],
+                        ["id": "grok", "name": "Grok", "provider": "grok", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "week", "label": "本周", "remainPct": 44, "usedPct": 56]]],
+                        ["id": "cursor", "name": "Cursor", "provider": "cursor", "kind": "subscription", "enabled": true, "authMode": "demo", "windows": [["id": "cursor", "label": "Cursor 模型", "remainPct": 71, "usedPct": 29]]],
+                    ],
+                    "providerMeta": [
+                        "codex": ["label": "Codex / ChatGPT", "help": "test", "tokenHint": "本机 Codex 登录态"],
+                        "grok": ["label": "Grok / SuperGrok", "help": "test", "tokenHint": "本机 Grok 浏览器登录"],
+                        "cursor": ["label": "Cursor", "help": "test", "tokenHint": "本机 Cursor 浏览器登录"],
+                    ],
                     "templates": [],
                     "resources": ["roles": [], "bubbles": [], "audio": []],
                     "app": ["version": "test", "build": "test", "connection": [
@@ -52,6 +64,9 @@ class WidgetWebViewTests: XCTestCase {
                         "configExists": false,
                         "status": "idle",
                         "buckets": [["id": "primary-300", "label": "5 小时", "remainPct": 62, "usedPct": 38]],
+                    ], "auth": [
+                        "grok": ["status": "idle", "buckets": [["id": "week", "label": "本周", "remainPct": 44, "usedPct": 56]]],
+                        "cursor": ["status": "idle", "buckets": [["id": "cursor", "label": "Cursor 模型", "remainPct": 71, "usedPct": 29]]],
                     ], "diagnostics": []]
                 ]
                 evaluate(webView, functionName: "window.__AIWhaleSettings.update", arguments: [payload])
@@ -170,6 +185,19 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertEqual(accounts as? Bool, true)
         let connectionWindowText = try await evaluate(webView, "document.querySelector(\"[data-acc=codex] .field\").innerText") as? String ?? ""
         XCTAssertTrue(connectionWindowText.contains("剩余 62%"), "Codex Auth connection card must render the canonical remainPct window")
+        let duplicateCodexMeters = try await evaluate(webView, "document.querySelectorAll('[data-acc=codex] .meter').length") as? Int ?? 0
+        XCTAssertEqual(duplicateCodexMeters, 1, "Codex must show the official auth windows once, not a second copy below")
+        let grokMeters = try await evaluate(webView, "document.querySelectorAll('[data-acc=grok] .meter').length") as? Int ?? 0
+        let cursorMeters = try await evaluate(webView, "document.querySelectorAll('[data-acc=cursor] .meter').length") as? Int ?? 0
+        XCTAssertEqual(grokMeters, 1, "Grok must show one remaining-quota meter from browser auth, not a duplicate below")
+        XCTAssertEqual(cursorMeters, 1, "Cursor must show one remaining-quota meter from browser auth, not a duplicate below")
+
+        let browserAuth = try await evaluate(webView, "({codexToken:Boolean(document.querySelector('[data-acc=codex] textarea')), grokToken:Boolean(document.querySelector('[data-acc=grok] textarea')), cursorToken:Boolean(document.querySelector('[data-acc=cursor] textarea')), grokLogin:Boolean(document.querySelector('[data-acc=grok] #loginGrok')), cursorLogin:Boolean(document.querySelector('[data-acc=cursor] #loginCursor'))})") as? [String: Any] ?? [:]
+        XCTAssertEqual(browserAuth["codexToken"] as? Bool, false)
+        XCTAssertEqual(browserAuth["grokToken"] as? Bool, false, "Grok must use browser login, not a pasted cookie")
+        XCTAssertEqual(browserAuth["cursorToken"] as? Bool, false, "Cursor must use browser login, not a pasted cookie")
+        XCTAssertEqual(browserAuth["grokLogin"] as? Bool, true)
+        XCTAssertEqual(browserAuth["cursorLogin"] as? Bool, true)
 
         let codexConnection = try await evaluate(webView, "({pathFields:Boolean(document.querySelector('[data-acc=codex] #codexPath, [data-acc=codex] #codexHome')), tokenInput:Boolean(document.querySelector('[data-acc=codex] textarea')), connect:Boolean(document.querySelector('[data-acc=codex] #loginCodex')), refresh:Boolean(document.querySelector('[data-acc=codex] #refreshCodex')), disconnect:Boolean(document.querySelector('[data-acc=codex] #disconnectCodex'))})") as? [String: Any] ?? [:]
         XCTAssertEqual(codexConnection["pathFields"] as? Bool, false, "Codex settings must not require CLI paths or CODEX_HOME")
@@ -183,6 +211,14 @@ class WidgetWebViewTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTAssertTrue(bridge.receivedTypes.contains("loginCodex"), "browser login must cross the native bridge")
+        _ = try await evaluate(webView, "document.querySelector('[data-acc=grok] #loginGrok').click()")
+        _ = try await evaluate(webView, "document.querySelector('[data-acc=cursor] #loginCursor').click()")
+        for _ in 0..<20 {
+            if bridge.receivedTypes.contains("loginGrok") && bridge.receivedTypes.contains("loginCursor") { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(bridge.receivedTypes.contains("loginGrok"), "Grok must use the same native browser-login bridge as Codex")
+        XCTAssertTrue(bridge.receivedTypes.contains("loginCursor"), "Cursor must use the same native browser-login bridge as Codex")
     }
 
     func testPackagedWidgetContinuousNativePointerQueueDoesNotAccumulate() async throws {
@@ -430,6 +466,88 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertGreaterThan(fallback["naturalHeight"] as? Double ?? 0, 0)
         XCTAssertTrue((fallback["imageSource"] as? String ?? "").hasSuffix("/DSniang1.png"))
         print("WHALE_WEBKIT_IMAGE fallback source=\(fallback["imageSource"] ?? "?") natural=\(fallback["naturalWidth"] ?? "?")x\(fallback["naturalHeight"] ?? "?")")
+    }
+
+    func testSubscriptionBubblesShowRemainingPercentNotMoney() async throws {
+        let resourceRoot = try makeResourceRoot()
+        let html = resourceRoot.appendingPathComponent("WhaleWidget.html")
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 420), configuration: WKWebViewConfiguration())
+        let delegate = NavigationDelegate()
+        webView.navigationDelegate = delegate
+        let loaded = expectation(description: "subscription bubble loaded")
+        delegate.onFinish = { loaded.fulfill() }
+        delegate.onFailure = { error in XCTFail("subscription bubble failed: \(error)"); loaded.fulfill() }
+        webView.loadFileURL(html, allowingReadAccessTo: resourceRoot)
+        await fulfillment(of: [loaded], timeout: 10)
+        try await waitForJavaScript(webView)
+
+        _ = try await evaluate(webView, """
+          window.__AIWhale.update({
+            accounts: [
+              {id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'primary-300',label:'5 小时',remainPct:62,usedPct:38}]},
+              {id:'grok',name:'Grok',provider:'grok',kind:'subscription',enabled:true,status:'ok',windows:[{id:'week',label:'本周',remainPct:44,usedPct:56}]},
+              {id:'cursor',name:'Cursor',provider:'cursor',kind:'subscription',enabled:true,status:'ok',windows:[{id:'cursor',label:'Cursor 模型',remainPct:71,usedPct:29}]},
+              {id:'deepseek',name:'DeepSeek',provider:'deepseek',kind:'balance',enabled:true,remaining:12.5,currency:'CNY'}
+            ],
+            bubble: {steps: [
+              {id:'step-dash',modules:[{type:'dashboard'}]},
+              {id:'step-grok',modules:[{type:'quota',accountId:'grok',windowId:'week',field:'remain'}]},
+              {id:'step-cursor',modules:[{type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}]},
+              {id:'step-codex',modules:[{type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'}]},
+              {id:'step-empty',modules:[{type:'quota',accountId:'grok',windowId:'week',field:'remain'}]}
+            ], advanceOnClick: true},
+            bubbleSteps: [
+              {id:'step-dash',modules:[{type:'dashboard'}]},
+              {id:'step-grok',modules:[{type:'quota',accountId:'grok',windowId:'week',field:'remain'}]},
+              {id:'step-cursor',modules:[{type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}]},
+              {id:'step-codex',modules:[{type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'}]}
+            ],
+            bubbleRevision: 'subscription-remain-1'
+          })
+        """)
+        let connected = try await evaluate(webView, """
+          ({
+            dash: standaloneMetricText({type:'dashboard'}),
+            grok: standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
+            cursor: standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
+            codex: standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'}),
+            moneyGrok: standaloneMetricText({type:'balance',accountId:'grok'})
+          })
+        """) as? [String: Any] ?? [:]
+        let dash = connected["dash"] as? String ?? ""
+        XCTAssertTrue(dash.contains("Codex 62%"), "dashboard must show Codex remaining percent")
+        XCTAssertTrue(dash.contains("Grok 44%"), "dashboard must show Grok remaining percent")
+        XCTAssertTrue(dash.contains("Cursor 71%"), "dashboard must show Cursor remaining percent")
+        XCTAssertTrue(dash.contains("¥12.50") || dash.contains("DeepSeek"), "dashboard still shows DeepSeek money balance")
+        XCTAssertFalse(dash.contains("$0"), "subscription remaining must not render as $0.00")
+        XCTAssertEqual(connected["grok"] as? String, "44%")
+        XCTAssertEqual(connected["cursor"] as? String, "71%")
+        XCTAssertEqual(connected["codex"] as? String, "62%")
+        XCTAssertEqual(connected["moneyGrok"] as? String, "44%", "a balance module bound to a subscription must still show percent remaining")
+
+        _ = try await evaluate(webView, """
+          window.__AIWhale.update({
+            accounts: [
+              {id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'notLoggedIn',windows:[]},
+              {id:'grok',name:'Grok',provider:'grok',kind:'subscription',enabled:true,status:'notLoggedIn',windows:[]},
+              {id:'cursor',name:'Cursor',provider:'cursor',kind:'subscription',enabled:true,status:'notLoggedIn',windows:[]}
+            ],
+            bubbleRevision: 'subscription-remain-empty'
+          })
+        """)
+        let empty = try await evaluate(webView, """
+          ({
+            dash: standaloneMetricText({type:'dashboard'}),
+            grok: standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
+            cursor: standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
+            codex: standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'})
+          })
+        """) as? [String: Any] ?? [:]
+        XCTAssertEqual(empty["dash"] as? String, "Codex 未连接 · Grok 未连接 · Cursor 未连接")
+        XCTAssertEqual(empty["grok"] as? String, "未连接")
+        XCTAssertEqual(empty["cursor"] as? String, "未连接")
+        XCTAssertEqual(empty["codex"] as? String, "未连接")
+        XCTAssertFalse((empty["dash"] as? String ?? "").contains("$0"))
     }
 
     private func widgetMetrics(_ webView: WKWebView) async throws -> [String: Any] {

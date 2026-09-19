@@ -10,6 +10,8 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
     var onRefreshAccounts: ((String?) -> Void)?
     var onCodexLogin: (() -> Void)?
     var onCodexDisconnect: (() -> Void)?
+    var onBrowserLogin: ((String) -> Void)?
+    var onBrowserDisconnect: ((String) -> Void)?
     var onResetLayout: (() -> Void)?
     var connectionState: (() -> ProviderState)?
 
@@ -124,6 +126,20 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
             sendPayload()
         case "refreshCodex":
             onRefreshAccounts?("codex")
+        case "loginGrok", "reloginGrok":
+            onBrowserLogin?("grok")
+        case "disconnectGrok":
+            onBrowserDisconnect?("grok")
+            sendPayload()
+        case "refreshGrok":
+            onRefreshAccounts?("grok")
+        case "loginCursor", "reloginCursor":
+            onBrowserLogin?("cursor")
+        case "disconnectCursor":
+            onBrowserDisconnect?("cursor")
+            sendPayload()
+        case "refreshCursor":
+            onRefreshAccounts?("cursor")
         case "resetLayout":
             WhaleConfigurationStore.shared.resetLayout()
             onResetLayout?()
@@ -249,6 +265,11 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
                 "version": Bundle.main.object(forInfoDictionaryKey: "AIAppReleaseTag") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
                 "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知",
                 "connection": connection,
+                "auth": [
+                    "codex": connection,
+                    "grok": browserAuthPayload(provider: "grok"),
+                    "cursor": browserAuthPayload(provider: "cursor"),
+                ],
                 "diagnostics": diagnostics()
             ]
         ]
@@ -285,6 +306,15 @@ final class SettingsWindowController: NSWindowController, WKScriptMessageHandler
         if let source = status?.authSource { result["authSource"] = source }
         result["buckets"] = AccountCatalog.windows(from: status?.buckets ?? []).map(\.dictionary)
         if let updated = status?.lastUpdated { result["lastUpdated"] = updated.timeIntervalSince1970 * 1000 }
+        return result
+    }
+
+    private func browserAuthPayload(provider: String) -> [String: Any] {
+        var result = SubscriptionCredentialStore.store(for: provider)?.statusPayload() ?? ["status": "notLoggedIn", "authSource": "app-keychain", "provider": provider]
+        let account = WhaleConfigurationStore.shared.publicAccounts().first { ($0["id"] as? String) == provider } ?? [:]
+        if result["message"] == nil { result["message"] = account["message"] ?? "请在浏览器中连接账户" }
+        if let windows = account["windows"] as? [[String: Any]] { result["buckets"] = windows }
+        if let updated = account["updatedAt"] { result["lastUpdated"] = updated }
         return result
     }
 

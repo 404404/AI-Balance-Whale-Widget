@@ -121,15 +121,16 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
       if (!rows.length) return '<p class="note">没有启用的账户</p>';
       return '<div style="width:200px;text-align:left"><p style="margin:0 0 6px;font-weight:650">额度总览</p>' + rows.map(function (a) {
         var w = (a.windows || [])[0] || {};
-        var label = a.kind === "balance" ? money(a) : remainLabel(w.remainPct);
-        var pct = a.kind === "balance" ? Math.min(100, (Number(a.remaining || 0) / Math.max(1, Number(a.total || 50))) * 100) : Number(w.remainPct || 0);
+        var connected = a.kind === "balance" ? a.remaining != null : (a.windows || []).length > 0;
+        var label = !connected ? "未连接" : (a.kind === "balance" ? money(a) : remainLabel(w.remainPct));
+        var pct = !connected ? 0 : (a.kind === "balance" ? Math.min(100, (Number(a.remaining || 0) / Math.max(1, Number(a.total || 50))) * 100) : Number(w.remainPct || 0));
         return '<div style="margin-top:6px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(a.name) + '</span><span class="mono">' + esc(label) + "</span></div><div class=\"meter\"><i style=\"width:" + pct + '%"></i></div></div>';
       }).join("") + "</div>";
     }
     if (mod.type === "quota" || mod.type === "plan") {
       var acc = (accs || []).filter(function (a) { return a.id === (mod.accountId || mod.modelId); })[0];
       var w = acc && ((acc.windows || []).filter(function (x) { return x.id === mod.windowId; })[0] || acc.windows[0]);
-      if (!acc || !w) return '<p class="note">未配置该订阅</p>';
+      if (!acc || !w) return '<p class="note">未连接该订阅</p>';
       if (mod.field === "remain") return '<p class="mono" style="margin:0;font-size:20px">' + remainLabel(w.remainPct) + "</p>";
       if (mod.field === "reset") return '<p class="note" style="margin:0">' + formatReset(w.resetAt) + "</p>";
       return '<div style="width:180px;text-align:left"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(w.label) + '</span><span class="mono">' + remainLabel(w.remainPct) + '</span></div><div class="meter"><i style="width:' + Number(w.remainPct || 0) + '%"></i></div><p class="note" style="margin:4px 0 0">' + formatReset(w.resetAt) + "</p></div>";
@@ -177,43 +178,65 @@ window.__AIWhaleResourceURLs = { roles: {}, bubbles: {}, audio: {} };
   }
   function accountCard(a) {
     var info = meta(a.provider);
+    var browser = a.provider === "codex" || a.provider === "grok" || a.provider === "cursor";
     var windows = (a.windows || []).map(function (w) {
       return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(w.label) + '</span><span class="mono">剩余 ' + remainLabel(w.remainPct) + '</span></div><div class="meter"><i style="width:' + Number(w.remainPct || 0) + '%"></i></div></div>';
     }).join("");
-    var balance = a.kind === "balance" ? '<p class="mono" style="font-size:20px;margin:8px 0 0">' + money(a) + "</p>" : windows;
-    var tokenHint = info.tokenHint;
-    var showToken = a.provider !== "codex" && a.authMode === "token";
-    var token = showToken ? '<label class="field">' + esc(tokenHint) + '<textarea id="tok-' + esc(a.id) + '" placeholder="只存在本机 Keychain，不会写进仓库"></textarea></label>' : "";
+    var balance = a.kind === "balance" ? '<p class="mono" style="font-size:20px;margin:8px 0 0">' + money(a) + "</p>" : (browser ? "" : windows);
+    var showToken = !browser && a.authMode === "token";
+    var token = showToken ? '<label class="field">' + esc(info.tokenHint) + '<textarea id="tok-' + esc(a.id) + '" placeholder="只存在本机 Keychain，不会写进仓库"></textarea></label>' : "";
     var core = ["codex", "grok", "cursor", "deepseek"].indexOf(a.id) >= 0;
-    var conn = a.provider === "codex" ? codexCard() : "";
-    var liveLabel = a.provider === "codex" ? "使用本机 Codex 登录实查" : "使用真实登录态 / Key";
-    var liveChecked = a.provider === "codex" || a.authMode === "token";
-    return '<div class="card" data-acc="' + esc(a.id) + '"><h3 style="margin:0 0 6px">' + esc(a.name) + '</h3><p class="note">' + esc(info.help) + '</p><div class="grid"><label class="check"><input class="en" type="checkbox" ' + (a.enabled !== false ? "checked" : "") + '>启用</label><label class="check"><input class="tok" type="checkbox" ' + (liveChecked ? "checked" : "") + (a.provider === "codex" ? " disabled" : "") + '>' + liveLabel + '</label></div>' + token + conn + '<div class="actions"><button class="primary refresh">刷新额度</button>' + (core ? "" : '<button class="danger del">删除</button>') + '</div><p class="note">' + esc(a.message || "") + (a.hasToken ? " · Keychain 已保存" : "") + "</p>" + balance + "</div>";
+    var conn = browser ? browserAuthCard(a) : "";
+    var liveToggle = browser ? "" : '<label class="check"><input class="tok" type="checkbox" ' + (a.authMode === "token" ? "checked" : "") + '>使用真实登录态 / Key</label>';
+    return '<div class="card" data-acc="' + esc(a.id) + '"><h3 style="margin:0 0 6px">' + esc(a.name) + '</h3><p class="note">' + esc(info.help) + '</p><div class="grid"><label class="check"><input class="en" type="checkbox" ' + (a.enabled !== false ? "checked" : "") + '>启用</label>' + liveToggle + "</div>" + token + conn + '<div class="actions"><button class="primary refresh">刷新额度</button>' + (core ? "" : '<button class="danger del">删除</button>') + '</div><p class="note">' + esc(a.message || "") + (a.hasToken ? " · Keychain 已保存" : "") + "</p>" + balance + "</div>";
   }
-  function codexCard() {
-    var c = (m.app && m.app.connection) || {}, ready = c.status === "ready";
-    var buckets = (c.buckets || []).map(function (b) {
+  function authStatus(provider) {
+    var app = m.app || {};
+    if (provider === "codex") return app.connection || {};
+    return (app.auth && app.auth[provider]) || {};
+  }
+  function browserAuthCard(a) {
+    var provider = a.provider;
+    var c = authStatus(provider);
+    var ready = c.status === "ready" || c.status === "ok";
+    var windows = (c.buckets && c.buckets.length ? c.buckets : (a.windows || [])).map(function (b) {
       return '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>' + esc(b.label || "额度窗口") + '</span><span class="mono">剩余 ' + remainLabel(b.remainPct) + '</span></div><div class="meter"><i style="width:' + (Number.isFinite(Number(b.remainPct)) ? Number(b.remainPct) : 0) + '%"></i></div></div>';
     }).join("");
     var identity = c.email || c.accountID || "未连接账户";
-    var details = ready ? (' · ' + esc(identity) + (c.plan ? ' · ' + esc(c.plan) : '') + (c.lastUpdated ? ' · 更新于 ' + esc(new Date(c.lastUpdated).toLocaleString()) : '')) : '';
-    return '<div class="status" style="margin-top:8px">' + esc(c.message || "请连接 ChatGPT/Codex") + '<br>连接状态：' + esc(c.status || "notLoggedIn") + details + '</div><div class="actions"><button class="primary" id="loginCodex">' + (ready ? '重新登录' : '连接账户') + '</button><button class="secondary" id="refreshCodex">刷新额度</button><button class="secondary" id="disconnectCodex">断开本 App 连接</button></div>' + (buckets ? '<div class="field"><label>订阅额度窗口</label>' + buckets + '</div>' : '') + '<p class="note">使用 AI Balance Whale 自己的官方浏览器授权与 Keychain 凭据。网页只接收脱敏身份和额度；断开只删除本 App 凭据，不会注销其它客户端登录。</p>';
+    var details = ready ? (" · " + esc(identity) + (c.plan ? " · " + esc(c.plan) : "") + (c.lastUpdated ? " · 更新于 " + esc(new Date(c.lastUpdated).toLocaleString()) : "")) : "";
+    var names = { codex: "ChatGPT/Codex", grok: "Grok", cursor: "Cursor" };
+    var ids = {
+      codex: { login: "loginCodex", refresh: "refreshCodex", disconnect: "disconnectCodex" },
+      grok: { login: "loginGrok", refresh: "refreshGrok", disconnect: "disconnectGrok" },
+      cursor: { login: "loginCursor", refresh: "refreshCursor", disconnect: "disconnectCursor" }
+    }[provider] || { login: "loginCodex", refresh: "refreshCodex", disconnect: "disconnectCodex" };
+    return '<div class="status" style="margin-top:8px">' + esc(c.message || a.message || ("请连接 " + (names[provider] || provider))) + "<br>连接状态：" + esc(c.status || a.status || "notLoggedIn") + details + '</div><div class="actions"><button class="primary" id="' + ids.login + '">' + (ready ? "重新登录" : "连接账户") + '</button><button class="secondary" id="' + ids.refresh + '">刷新额度</button><button class="secondary" id="' + ids.disconnect + '">断开本 App 连接</button></div>' + (windows ? '<div class="field"><label>订阅额度窗口</label>' + windows + "</div>" : "") + '<p class="note">点连接账户会打开官方网页登录。凭据只进本机 Keychain，网页看不到 Cookie 或 token；断开只删除本 App 凭据。</p>';
   }
   function bindAccountCard(a) {
     var root = document.querySelector('[data-acc="' + a.id + '"]');
     if (!root) return;
     root.querySelector(".en").onchange = function () { a.enabled = this.checked; save(); };
-    root.querySelector(".tok").onchange = function () { a.authMode = this.checked ? "token" : "demo"; save(); accountsPage(); };
+    var tok = root.querySelector(".tok");
+    if (tok) tok.onchange = function () { a.authMode = this.checked ? "token" : "demo"; save(); accountsPage(); };
     var ta = document.getElementById("tok-" + a.id);
     if (ta) ta.onchange = function () { if (this.value) post("saveCredential", { reference: a.keyRef || ("account." + a.id), value: this.value, accountId: a.id }); };
     root.querySelector(".refresh").onclick = function () { post("refreshAccounts", { accountId: a.id }); say("正在刷新 " + a.name); };
     var del = root.querySelector(".del");
     if (del) del.onclick = function () { post("removeAccount", { id: a.id }); };
-    if (a.provider === "codex") {
-      var login = document.getElementById("loginCodex"); if (login) login.onclick = function () { post("loginCodex"); say("已打开官方登录页面，请完成授权后返回本应用"); };
-      var refresh = document.getElementById("refreshCodex"); if (refresh) refresh.onclick = function () { post("refreshCodex"); say("正在刷新 Codex 额度"); };
-      var disconnect = document.getElementById("disconnectCodex"); if (disconnect) disconnect.onclick = function () { post("disconnectCodex"); say("已断开本 App 授权"); };
-    }
+    ["codex", "grok", "cursor"].forEach(function (provider) {
+      if (a.provider !== provider) return;
+      var ids = {
+        codex: { login: "loginCodex", refresh: "refreshCodex", disconnect: "disconnectCodex" },
+        grok: { login: "loginGrok", refresh: "refreshGrok", disconnect: "disconnectGrok" },
+        cursor: { login: "loginCursor", refresh: "refreshCursor", disconnect: "disconnectCursor" }
+      }[provider];
+      var login = document.getElementById(ids.login);
+      if (login) login.onclick = function () { post(ids.login); say("已打开官方登录页面，请完成授权后返回本应用"); };
+      var refresh = document.getElementById(ids.refresh);
+      if (refresh) refresh.onclick = function () { post(ids.refresh); say("正在刷新 " + a.name + " 额度"); };
+      var disconnect = document.getElementById(ids.disconnect);
+      if (disconnect) disconnect.onclick = function () { post(ids.disconnect); say("已断开本 App 授权"); };
+    });
   }
 
   function bubblesPage() {

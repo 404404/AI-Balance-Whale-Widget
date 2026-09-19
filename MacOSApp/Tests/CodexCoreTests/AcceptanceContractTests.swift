@@ -104,9 +104,49 @@ final class BrowserAuthAcceptanceTests: XCTestCase {
         XCTAssertTrue(html.contains("loginCodex"))
         XCTAssertTrue(html.contains("refreshCodex"))
         XCTAssertTrue(html.contains("disconnectCodex"))
+        XCTAssertTrue(html.contains("loginGrok"))
+        XCTAssertTrue(html.contains("loginCursor"))
         XCTAssertFalse(html.contains("id=\"codexPath\""))
         XCTAssertFalse(html.contains("id=\"codexHome\""))
         XCTAssertFalse(html.contains("sessionToken"))
+        XCTAssertFalse(html.contains("WorkosCursorSessionToken"))
+        XCTAssertFalse(html.contains("粘贴 grok"))
+        XCTAssertFalse(html.contains("function codexCard"))
+    }
+
+    func testGrokBrowserOAuthUsesOfficialLoopback() throws {
+        let request = GrokOAuthSupport.makeRequest(port: 56121, random: { Data(repeating: 3, count: 32) })
+        let url = try XCTUnwrap(GrokOAuthSupport.authorizationURL(request: request))
+        XCTAssertEqual(url.host, "auth.x.ai")
+        XCTAssertEqual(request.redirectURI, "http://127.0.0.1:56121/callback")
+        let valid = URL(string: "http://127.0.0.1:56121/callback?code=abc&state=\(request.state)")!
+        guard case .success(let callback) = GrokOAuthSupport.validateCallback(valid, request: request) else {
+            return XCTFail("valid grok callback rejected")
+        }
+        XCTAssertEqual(callback.code, "abc")
+        let wrongHost = URL(string: "http://localhost:56121/callback?code=abc&state=\(request.state)")!
+        if case .success = GrokOAuthSupport.validateCallback(wrongHost, request: request) { XCTFail("localhost alias accepted") }
+    }
+
+    func testCursorBrowserLoginUsesDeepControlPoll() throws {
+        let request = CursorOAuthSupport.makeRequest(uuid: "11111111-1111-1111-1111-111111111111", random: { Data(repeating: 5, count: 32) })
+        XCTAssertEqual(request.loginURL.host, "cursor.com")
+        XCTAssertEqual(request.loginURL.path, "/loginDeepControl")
+        let items = URLComponents(url: request.loginURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(items.first(where: { $0.name == "mode" })?.value, "login")
+        XCTAssertEqual(items.first(where: { $0.name == "uuid" })?.value, request.uuid)
+        XCTAssertNotNil(items.first(where: { $0.name == "challenge" })?.value)
+        let poll = CursorOAuthSupport.pollURL(request: request)
+        XCTAssertEqual(poll.host, "api2.cursor.sh")
+        XCTAssertEqual(poll.path, "/auth/poll")
+        switch CursorOAuthSupport.parsePoll(["accessToken": "tok", "refreshToken": "ref", "userId": "user_1"]) {
+        case .success(let value):
+            XCTAssertEqual(value.accessToken, "tok")
+            XCTAssertEqual(value.refreshToken, "ref")
+        case .failure(let error):
+            XCTFail(error.message)
+        }
+        if case .success = CursorOAuthSupport.parsePoll(["pending": true]) { XCTFail("empty poll accepted") }
     }
 
     private func repository() -> URL {
