@@ -349,8 +349,14 @@ if (!lock) {
     globalShortcut.register(process.platform === 'darwin' ? 'Command+Option+W' : 'Control+Alt+W', toggle);
     screen.on('display-metrics-changed', handleDisplayChange);
     screen.on('display-removed', handleDisplayChange);
-    bridge = await startBridge(dispatcher, { dataDir });
-    markStartup('bridgeReady');
+    try {
+      bridge = await startBridge(dispatcher, { dataDir });
+      markStartup("bridgeReady");
+    } catch (error) {
+      bridge = null;
+      try { save(path.join(dataDir, "bridge-error.json"), { message: String(error?.message || error).slice(0, 350), at: new Date().toISOString() }); } catch {}
+      markStartup("bridgeUnavailable");
+    }
     await window.loadURL(UI_ORIGIN + '/widget.html');
     markStartup('pageLoaded');
     visibilityWatchdog = setInterval(visibility, 1000);
