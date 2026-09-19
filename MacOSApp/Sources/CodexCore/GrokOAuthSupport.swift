@@ -104,9 +104,10 @@ public enum GrokOAuthSupport {
     }
 
     public static func parseLoopback(_ data: Data) -> GrokLoopbackRequest? {
-        guard let range = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+        guard let range = data.range(of: Data("\r\n\r\n".utf8)) ?? data.range(of: Data("\n\n".utf8)) else { return nil }
         let headerText = String(decoding: data[..<range.lowerBound], as: UTF8.self)
-        let lines = headerText.split(whereSeparator: { $0 == "\r" || $0 == "\n" }).map(String.init)
+        let separator = headerText.contains("\r\n") ? "\r\n" : "\n"
+        let lines = headerText.components(separatedBy: separator).filter { !$0.isEmpty }
         guard let first = lines.first else { return nil }
         let parts = first.split(separator: " ").map(String.init)
         let method = (parts.first ?? "GET").uppercased()
@@ -118,11 +119,12 @@ public enum GrokOAuthSupport {
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
             headers[name] = value
         }
+        let privateNetwork = headers.contains { $0.key.contains("private-network") && $0.value.lowercased() == "true" }
         return GrokLoopbackRequest(
             method: method,
             target: target,
             origin: headers["origin"],
-            requestsPrivateNetwork: (headers["access-control-request-private-network"] ?? "").lowercased() == "true",
+            requestsPrivateNetwork: privateNetwork,
             expectedBodyLength: Int(headers["content-length"] ?? "0") ?? 0,
             body: Data(data[range.upperBound...])
         )
