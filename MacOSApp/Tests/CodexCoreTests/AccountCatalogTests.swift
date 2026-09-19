@@ -121,7 +121,9 @@ final class AccountCatalogTests: XCTestCase {
             RateLimitBucket(id: "codex", name: nil, window: .secondary, windowDurationMinutes: 10080, usedPercent: 19, resetsAt: Date(timeIntervalSince1970: 1_730_100_000)),
         ]
         let windows = AccountCatalog.windows(from: buckets)
-        XCTAssertEqual(windows.map(\.id), ["primary-300", "secondary-10080"])
+        XCTAssertEqual(windows.map(\.id), ["5h", "week"])
+        XCTAssertEqual(windows[0].label, "5 小时")
+        XCTAssertEqual(windows[1].label, "本周")
         XCTAssertEqual(windows[0].remainPct, 62)
         XCTAssertEqual(windows[1].remainPct, 81)
     }
