@@ -507,11 +507,11 @@ class WidgetWebViewTests: XCTestCase {
         """)
         let connected = try await evaluate(webView, """
           ({
-            dash: standaloneMetricText({type:'dashboard'}),
-            grok: standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
-            cursor: standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
-            codex: standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'}),
-            moneyGrok: standaloneMetricText({type:'balance',accountId:'grok'})
+            dash: window.standaloneMetricText({type:'dashboard'}),
+            grok: window.standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
+            cursor: window.standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
+            codex: window.standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'}),
+            moneyGrok: window.standaloneMetricText({type:'balance',accountId:'grok'})
           })
         """) as? [String: Any] ?? [:]
         let dash = connected["dash"] as? String ?? ""
@@ -525,6 +525,14 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertEqual(connected["codex"] as? String, "62%")
         XCTAssertEqual(connected["moneyGrok"] as? String, "44%", "a balance module bound to a subscription must still show percent remaining")
 
+        _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown(); window.__AIWhale.nativePointerUp(false)")
+        try await Task.sleep(nanoseconds: 260_000_000)
+        let dashBubble = try await evaluate(webView, "document.querySelector('.dshwv-text').textContent") as? String ?? ""
+        XCTAssertTrue(dashBubble.contains("Codex 62%"), "click bubble dashboard must show Codex remaining percent")
+        XCTAssertTrue(dashBubble.contains("Grok 44%"), "click bubble dashboard must show Grok remaining percent")
+        XCTAssertTrue(dashBubble.contains("Cursor 71%"), "click bubble dashboard must show Cursor remaining percent")
+        XCTAssertFalse(dashBubble.contains("$0"), "click bubble must not render subscription remaining as $0.00")
+
         _ = try await evaluate(webView, """
           window.__AIWhale.update({
             accounts: [
@@ -537,10 +545,10 @@ class WidgetWebViewTests: XCTestCase {
         """)
         let empty = try await evaluate(webView, """
           ({
-            dash: standaloneMetricText({type:'dashboard'}),
-            grok: standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
-            cursor: standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
-            codex: standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'})
+            dash: window.standaloneMetricText({type:'dashboard'}),
+            grok: window.standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
+            cursor: window.standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
+            codex: window.standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'})
           })
         """) as? [String: Any] ?? [:]
         XCTAssertEqual(empty["dash"] as? String, "Codex 未连接 · Grok 未连接 · Cursor 未连接")
