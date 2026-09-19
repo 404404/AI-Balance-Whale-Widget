@@ -11761,24 +11761,32 @@ function standaloneMetricText(mod) {
     var enabled = accounts.filter(function (a) { return a && a.enabled !== false })
     if (!enabled.length) return '没有启用的账户'
     return enabled.map(function (a) {
-      var w0 = (a.windows || [])[0] || {}
-      return (a.name || a.id || '账户') + ' ' + (a.kind === 'balance' ? whaleMoney(a) : whaleRemainLabel(w0.remainPct))
+      var windows = Array.isArray(a.windows) ? a.windows : []
+      if (a.kind === 'balance') return (a.name || a.id || '账户') + ' ' + (a.remaining == null ? '未连接' : whaleMoney(a))
+      if (!windows.length) return (a.name || a.id || '账户') + ' 未连接'
+      var w0 = windows[0] || {}
+      return (a.name || a.id || '账户') + ' ' + whaleRemainLabel(w0.remainPct)
     }).join(' · ')
   }
   if (m.type !== 'quota' && m.type !== 'plan' && m.type !== 'balance') return null
-  // modelId is the beta field; it is an explicit account binding, not a
-  // fallback to whichever account happens to be first.
   var official = (m.type === "quota" || m.type === "plan") ? standaloneCodexQuota(m) : null
   var accountID = m.accountId || m.modelId
   var account = official ? official.account : accounts.filter(function (a) { return a && a.id === accountID && a.enabled !== false })[0]
-  if (!account) return '账户未连接'
+  if (!account) {
+    if (accountID) return '未连接'
+    return '账户未连接'
+  }
   if (m.type === 'balance') {
-    var money = whaleMoney(account)
+    if (account.kind === 'subscription') {
+      var subWin = (account.windows || [])[0]
+      return subWin ? whaleRemainLabel(subWin.remainPct) : '未连接'
+    }
+    var money = account.remaining == null ? '未连接' : whaleMoney(account)
     return bubbleContentText(m, money)
   }
   var windows = official ? [official.window] : (Array.isArray(account.windows) ? account.windows : [])
   var win = official ? official.window : (m.windowId ? windows.filter(function (w) { return w && w.id === m.windowId })[0] : windows[0])
-  if (!win) return bubbleContentText(m, '额度窗口不可用')
+  if (!win) return '未连接'
   var raw
   var field = m.field || (m.type === 'plan' ? 'remain' : 'summary')
   if (field === 'used') raw = (typeof win.usedPct === 'number' && isFinite(win.usedPct)) ? ('已用 ' + Math.round(win.usedPct) + '%') : '已用 —'

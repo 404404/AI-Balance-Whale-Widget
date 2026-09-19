@@ -31,6 +31,33 @@ final class QuotaRefreshCoordinator {
     }
     func configurationChanged() { queue.async { [weak self] in self?.codexDisconnected = false; self?.refreshLocked() } }
 
+    func noteBrowserAuthError(provider: String, message: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.apply(id: provider, patch: [
+                "status": "error",
+                "message": message,
+            ], generation: self.generation, keepLastOnEmptyWindows: true)
+        }
+    }
+
+    func disconnectBrowserAuth(provider: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            if provider == "codex" {
+                self.disconnectCodex()
+                return
+            }
+            SubscriptionCredentialStore.store(for: provider)?.disconnect()
+            let label = AccountCatalog.providerMeta[provider]?["label"] ?? provider
+            self.apply(id: provider, patch: [
+                "status": "notLoggedIn",
+                "message": "已断开本 App 授权；不会注销其他 \(label) 登录",
+                "windows": [] as [[String: Any]],
+                "updatedAt": NSNull(),
+            ], generation: self.generation, keepLastOnEmptyWindows: false)
+        }
+    }
     func disconnectCodex() {
         queue.async { [weak self] in
             guard let self else { return }
@@ -76,6 +103,29 @@ final class QuotaRefreshCoordinator {
                 latestCodex = ProviderState(status: .loading, message: "正在查询 Codex 额度…", authSource: "app-keychain", requestID: String(current))
                 emitCodex()
                 codex.refresh(requestID: String(current))
+                continue
+            }
+            if let browserStore = SubscriptionCredentialStore.store(for: provider) {
+                pending += 1
+                browserStore.accessToken { [weak self] result in
+                    guard let self else { return }
+                    self.queue.async {
+                        switch result {
+                        case .failure:
+                            self.apply(
+                                id: id,
+                                patch: ["status": "notLoggedIn", "message": "尚未连接 \(AccountCatalog.providerMeta[provider]?["label"] ?? provider) 账户"],
+                                generation: current,
+                                keepLastOnEmptyWindows: true
+                            )
+                            self.finishOne(current)
+                        case .success(let credential):
+                            self.external.fetch(provider: provider, token: credential.accessToken) { [weak self] fetch in
+                                self?.queue.async { self?.finishExternal(id: id, result: fetch, generation: current) }
+                            }
+                        }
+                    }
+                }
                 continue
             }
             if !AccountCatalog.shouldLiveFetch(provider: provider, authMode: authMode, hasToken: hasToken) {

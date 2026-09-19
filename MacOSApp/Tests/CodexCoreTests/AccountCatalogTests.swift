@@ -76,10 +76,12 @@ final class AccountCatalogTests: XCTestCase {
 
     func testCodexLiveFetchesWithoutPastedToken() {
         XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "codex", authMode: "demo", hasToken: false))
-        XCTAssertFalse(AccountCatalog.shouldLiveFetch(provider: "grok", authMode: "demo", hasToken: false))
-        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "grok", authMode: "token", hasToken: true))
+        XCTAssertTrue(AccountCatalog.usesBrowserAuth("grok"))
+        XCTAssertTrue(AccountCatalog.usesBrowserAuth("cursor"))
+        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "grok", authMode: "demo", hasToken: false))
+        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "cursor", authMode: "demo", hasToken: false))
         XCTAssertFalse(AccountCatalog.shouldLiveFetch(provider: "deepseek", authMode: "token", hasToken: false))
-        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "cursor", authMode: "token", hasToken: true))
+        XCTAssertTrue(AccountCatalog.shouldLiveFetch(provider: "deepseek", authMode: "token", hasToken: true))
     }
 
     func testBubbleRevisionChangesWhenSettingsOrQuotaChange() {

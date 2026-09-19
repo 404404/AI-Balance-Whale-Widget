@@ -4,6 +4,8 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let quota = QuotaRefreshCoordinator()
     private let codexLogin = CodexOAuthCoordinator()
+    private let grokLogin = GrokOAuthCoordinator()
+    private let cursorLogin = CursorOAuthCoordinator()
     private var whaleWindow: WhaleWindowController!
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem!
@@ -67,6 +69,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.codexLogin.start()
             }
             controller.onCodexDisconnect = { [weak self] in self?.quota.disconnectCodex() }
+            controller.onBrowserLogin = { [weak self] provider in
+                guard let self else { return }
+                let finish: (ProviderError?) -> Void = { [weak self] error in
+                    if let error {
+                        self?.quota.noteBrowserAuthError(provider: provider, message: error.localizedDescription)
+                    } else {
+                        self?.quota.refreshAccount(id: provider)
+                    }
+                    self?.settingsWindow?.refreshConnectionState()
+                }
+                if provider == "grok" {
+                    self.grokLogin.onResult = finish
+                    self.grokLogin.start()
+                } else if provider == "cursor" {
+                    self.cursorLogin.onResult = finish
+                    self.cursorLogin.start()
+                }
+            }
+            controller.onBrowserDisconnect = { [weak self] provider in
+                self?.quota.disconnectBrowserAuth(provider: provider)
+                self?.settingsWindow?.refreshConnectionState()
+            }
             controller.onResetLayout = { [weak self] in self?.whaleWindow.resetPositionAndSize() }
             settingsWindow = controller
         }

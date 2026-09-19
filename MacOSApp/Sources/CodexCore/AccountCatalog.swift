@@ -114,13 +114,13 @@ public enum AccountCatalog {
         ],
         "grok": [
             "label": "Grok / SuperGrok", "kind": "subscription", "currency": "USD",
-            "tokenHint": "Grok OAuth / grok login token",
-            "help": "读 SuperGrok 周额度。粘贴 grok login 后的 bearer，不是 xAI 推理 API Key。",
+            "tokenHint": "本机 Grok 浏览器登录",
+            "help": "Nowdex 同款：读 SuperGrok 周额度和短窗。点连接账户会打开官方网页授权，不需要粘贴 Cookie 或 API Key。",
         ],
         "cursor": [
             "label": "Cursor", "kind": "subscription", "currency": "USD",
-            "tokenHint": "WorkosCursorSessionToken 或 crsr_ 密钥",
-            "help": "读 Cursor Models / Other Models，以及 Grok Bot 周额度。",
+            "tokenHint": "本机 Cursor 浏览器登录",
+            "help": "读 Cursor 模型 / 其它模型 / Grok Bot 百分比额度。点连接账户会打开 Cursor 官方登录页，不需要粘贴 Cookie。",
         ],
         "deepseek": [
             "label": "DeepSeek", "kind": "balance", "currency": "CNY",
@@ -282,10 +282,14 @@ public enum AccountCatalog {
         return next
     }
 
-    /// Codex uses App-owned browser authorization, so it live-fetches whenever enabled.
-    /// Other providers need an explicit token in Keychain.
+    /// Codex / Grok / Cursor use App-owned browser authorization.
+    /// Other providers need an explicit API key in Keychain.
+    public static func usesBrowserAuth(_ provider: String) -> Bool {
+        provider == "codex" || provider == "grok" || provider == "cursor"
+    }
+
     public static func shouldLiveFetch(provider: String, authMode: String, hasToken: Bool) -> Bool {
-        if provider == "codex" { return true }
+        if usesBrowserAuth(provider) { return true }
         return authMode == "token" && hasToken
     }
 
@@ -445,8 +449,13 @@ public enum AccountCatalog {
             var converted: [[String: Any]] = []
             for module in modules {
                 switch module["type"] as? String {
-                case "plan":
-                    converted.append(["type": "quota", "accountId": "codex", "field": "full"])
+                case "plan", "quota":
+                    converted.append([
+                        "type": "quota",
+                        "accountId": module["accountId"] as? String ?? module["modelId"] as? String ?? "codex",
+                        "windowId": module["windowId"] as? String ?? "",
+                        "field": module["field"] as? String ?? "full",
+                    ])
                 case "balance":
                     converted.append(["type": "balance", "accountId": module["modelId"] as? String ?? "deepseek"])
                 case "random":

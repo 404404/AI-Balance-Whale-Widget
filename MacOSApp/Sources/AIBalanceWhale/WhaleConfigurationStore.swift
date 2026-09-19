@@ -191,8 +191,13 @@ final class WhaleConfigurationStore {
     func publicAccounts() -> [[String: Any]] {
         accounts().map { account in
             var next = AccountCatalog.stripSecret(account)
-            let keyRef = next["keyRef"] as? String ?? ""
-            next["hasToken"] = hasCredential(reference: keyRef)
+            let provider = next["provider"] as? String ?? next["id"] as? String ?? ""
+            if AccountCatalog.usesBrowserAuth(provider), let store = SubscriptionCredentialStore.store(for: provider) {
+                next["hasToken"] = store.hasCredential()
+            } else {
+                let keyRef = next["keyRef"] as? String ?? ""
+                next["hasToken"] = hasCredential(reference: keyRef)
+            }
             return next
         }
     }
