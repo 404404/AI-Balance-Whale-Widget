@@ -11800,6 +11800,7 @@ function standaloneMetricText(mod) {
   }
   return raw
 }
+if (window.__AIWhaleStandalone) window.standaloneMetricText = standaloneMetricText
 function bubbleRowContentOf(mod) {
   mod = mod || {}
   if (window.__AIWhaleStandalone) {
