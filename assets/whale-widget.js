@@ -11106,8 +11106,11 @@
       try { root.setPointerCapture(e.pointerId); } catch (err) {}
     drag = {
         active: true,
+        native: !!(window.whaleDesktop && window.whaleDesktop.standalone),
         startX: e.clientX,
         startY: e.clientY,
+        startScreenX: Number.isFinite(e.screenX) ? e.screenX : e.clientX,
+        startScreenY: Number.isFinite(e.screenY) ? e.screenY : e.clientY,
         origLeft: rect.left,
         origTop: rect.top,
         w: root.offsetWidth,
@@ -11117,6 +11120,7 @@
       };
       root.classList.add('dshwv-dragging');
       positioner.style.transition = 'none';
+      if (drag.native && window.whaleDesktop.dragStart) window.whaleDesktop.dragStart({ x: drag.startScreenX, y: drag.startScreenY });
       pressDown();
       setWidgetCursor('grabbing');
       document.addEventListener('pointermove', onDocPointerMove, true);
@@ -11128,6 +11132,12 @@
       var dx = e.clientX - drag.startX;
       var dy = e.clientY - drag.startY;
       if (dx * dx + dy * dy >= CLICK_SQ) drag.moved = true;
+      if (drag.native) {
+        var sx = Number.isFinite(e.screenX) ? e.screenX : e.clientX;
+        var sy = Number.isFinite(e.screenY) ? e.screenY : e.clientY;
+        if (window.whaleDesktop.dragMove) window.whaleDesktop.dragMove({ x: sx, y: sy });
+        return;
+      }
       state.left = clamp(drag.origLeft + dx, 0, Math.max(0, drag.vp.w - drag.w));
       state.top = clamp(drag.origTop + dy, 0, Math.max(0, drag.vp.h - drag.h));
       express();
@@ -11211,6 +11221,15 @@
       root.classList.remove('dshwv-dragging');
       positioner.style.transition = '';
       setWidgetCursor(isWhaleHit(e) ? 'grab' : '');
+      if (drag.native) {
+        var nativeMoved = drag.moved;
+        if (window.whaleDesktop.dragEnd) window.whaleDesktop.dragEnd();
+        if (clickAllowed && !nativeMoved) {
+          whaleClick();
+          refresh(true);
+        }
+        return;
+      }
       if (clickAllowed && !drag.moved) {
         whaleClick();
         refresh(true);

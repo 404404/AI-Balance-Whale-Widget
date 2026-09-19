@@ -1,0 +1,160 @@
+name: macOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version, for example 0.2.0-beta.1'
+        required: true
+        type: string
+      tag:
+        description: 'Release tag, for example macos-v0.2.0-beta.1'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark the GitHub Release as a prerelease'
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - 'macos-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    name: Build, verify and publish arm64 DMG
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - name: Resolve release inputs
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            VERSION="$INPUT_VERSION"
+            TAG="$INPUT_TAG"
+            PRERELEASE="${{ inputs.prerelease }}"
+            [[ "$TAG" == macos-v* ]] || { echo 'tag must start with macos-v'; exit 1; }
+            [[ "$TAG" == "macos-v$VERSION" ]] || { echo 'tag must equal macos-v<version>'; exit 1; }
+          else
+            TAG="$REF_NAME"
+            VERSION="${TAG#macos-v}"
+            PRERELEASE=true
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo 'invalid version'; exit 1; }
+          [[ "$TAG" =~ ^macos-v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo 'invalid tag'; exit 1; }
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+      - name: Check out the exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+      - name: Check for tag collision
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            if [[ "${{ github.event_name }}" == workflow_dispatch ]]; then
+              echo "tag already exists: $TAG" >&2
+              exit 1
+            fi
+            git rev-parse "$TAG^{commit}" | grep -Fxq "$GITHUB_SHA" || { echo 'tag does not point to workflow SHA' >&2; exit 1; }
+          fi
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Record runner architecture
+        run: |
+          uname -a
+          node -p 'JSON.stringify({node:process.version, arch:process.arch, platform:process.platform})'
+      - name: JavaScript checks
+        run: npm test
+      - name: Build and sign App from this checkout
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: npm run build:mac
+      - name: Packaged App acceptance
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          npm run verify:mac
+          bash scripts/smoke-mac-app.sh 'dist/AI Balance Whale.app' qa-output/release-smoke
+      - name: Create and validate DMG
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: bash scripts/create-dmg.sh
+      - name: Create dispatch tag at the checked-out commit
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag -a "$TAG" -m "AI Balance Whale $TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+      - name: Verify release source identity
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee qa-output/release-commit.txt
+          git rev-parse HEAD | grep -Fxq "$GITHUB_SHA"
+          shasum -a 256 "dist/AI-Balance-Whale-macos-${VERSION}-arm64.dmg" | tee "dist/AI-Balance-Whale-macos-${VERSION}-arm64.sha256"
+      - name: Publish Release with exact assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          [[ "$PRERELEASE" == true ]] && PRE='--prerelease' || PRE=''
+          gh release view "$TAG" >/dev/null 2>&1 && { echo "release already exists: $TAG" >&2; exit 1; } || true
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "AI Balance Whale $VERSION" \
+            --notes "Source commit: $GITHUB_SHA\n\nApple Silicon arm64 DMG. This build is ad-hoc signed and is not notarized. The packaged App was launched in the macOS runner before publishing." \
+            $PRE \
+            "dist/AI-Balance-Whale-macos-${VERSION}-arm64.dmg" \
+            "dist/AI-Balance-Whale-macos-${VERSION}-arm64.sha256"
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-balance-whale-macos-release-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            qa-output/**
+            dist/*.dmg
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

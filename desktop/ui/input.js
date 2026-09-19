@@ -4,7 +4,8 @@
   if (!bridge || !rendering) return;
   const pet = document.querySelector('.dshwv-img'), root = document.querySelector('.dshwv-root');
   const failedRoleSources = new Set();
-  let point = { x: -1, y: -1 }, heldPointer = null, releaseEpoch = 0, interactive = false, keyboardFocus = false, ready = false, lastStorage = '';
+  let point = { x: -1, y: -1 }, heldPointer = null, releaseEpoch = 0, interactive = false, keyboardFocus = false, ready = false, lastStorage = '', surfaceExpanded = false, lastWidgetSize = '';
+  const standalone = bridge.standalone === true;
   const surfaces = 'dialog[open],.dshwv-menu,.dshwv-menu-btn,.dshwv-rolelist,.dshwv-audiolist,[class*="mask"],.dshwv-qedit,.dshwv-usagepanel,.dshwv-custmenu,.dshwv-custbtn,.dshwv-tplhelp,.dshwv-fxinfo,.dshwv-fxicon,#toast:not([hidden])';
   const keyboardSurfaces = 'dialog[open],.dshwv-menu,.dshwv-rolelist,.dshwv-audiolist,[class*="mask"],.dshwv-qedit,.dshwv-usagepanel,.dshwv-custmenu';
   function visible(el) { return el.checkVisibility({ opacityProperty: true, visibilityProperty: true }); }
@@ -26,6 +27,23 @@
     const next = [...document.querySelectorAll(keyboardSurfaces)].some(el =>
       el.checkVisibility({ visibilityProperty: true }) && getComputedStyle(el).pointerEvents !== 'none');
     if (next !== keyboardFocus) { keyboardFocus = next; bridge.keyboardFocus(next); }
+  }
+  function updateSurface() {
+    if (!standalone) return;
+    const next = [...document.querySelectorAll(surfaces)].some(el =>
+      el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && getComputedStyle(el).pointerEvents !== 'none');
+    if (next !== surfaceExpanded) { surfaceExpanded = next; bridge.surface(next); }
+  }
+  function reportWidgetSize() {
+    if (!standalone || !root) return;
+    const rect = root.getBoundingClientRect();
+    const width = Math.max(root.offsetWidth || 0, Math.abs(rect.width || 0));
+    const height = Math.max(root.offsetHeight || 0, Math.abs(rect.height || 0));
+    const key = Math.round(width) + 'x' + Math.round(height);
+    if (width > 0 && height > 0 && key !== lastWidgetSize) {
+      lastWidgetSize = key;
+      bridge.widgetSize({ width, height });
+    }
   }
   function track(e) { point = { x: e.clientX, y: e.clientY }; update(); }
   // Electron forwards mousemove while ignoring input on Windows; pointermove alone is insufficient.
@@ -61,12 +79,13 @@
     }
   });
   rendering.onFrame(update);
-  const request = () => { updateKeyboardFocus(); rendering.presentFor(); };
+  const request = () => { updateKeyboardFocus(); updateSurface(); reportWidgetSize(); rendering.presentFor(); };
   new MutationObserver(request).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'src', 'open', 'hidden', 'inert'] });
   document.addEventListener('transitionrun', e => {
     if (e.target.closest('.dshwv-root,.dshwv-position')) rendering.presentFor(600);
   }, true);
-  window.addEventListener('resize', () => rendering.presentFor(220));
+  window.addEventListener('resize', () => { reportWidgetSize(); rendering.presentFor(220); });
+  if (standalone && typeof ResizeObserver === 'function') new ResizeObserver(reportWidgetSize).observe(root);
   async function prepare() {
     if (!pet.complete) return;
     if (!pet.naturalWidth) { fallbackRole(); return; }

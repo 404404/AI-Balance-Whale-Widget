@@ -18,5 +18,14 @@ contextBridge.exposeInMainWorld('whaleDesktop', {
     return ipcRenderer.invoke('whale-open-external', value);
   },
   testMode: process.argv.includes('--whale-render-test'),
+  standalone: process.platform === 'darwin' || process.argv.includes('--standalone'),
+  surface: expanded => ipcRenderer.send('whale-surface', !!expanded),
+  widgetSize: size => {
+    if (!size || typeof size !== 'object') return;
+    ipcRenderer.send('whale-widget-size', { width: Number(size.width), height: Number(size.height) });
+  },
+  dragStart: point => ipcRenderer.send('whale-drag-start', { x: Number(point?.x), y: Number(point?.y) }),
+  dragMove: point => ipcRenderer.send('whale-drag-move', { x: Number(point?.x), y: Number(point?.y) }),
+  dragEnd: () => ipcRenderer.send('whale-drag-end'),
 });
 ipcRenderer.on('whale-settings', () => window.dispatchEvent(new Event('whale-open-settings')));
