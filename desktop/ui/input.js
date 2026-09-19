@@ -35,7 +35,7 @@
       el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && getComputedStyle(el).pointerEvents !== 'none');
     if (next !== surfaceExpanded) { surfaceExpanded = next; bridge.surface(next); }
   }
-  function reportWidgetSize() {
+  function reportWidgetSize(forceDiagnostic = false) {
     if (!standalone || !root) return;
     const rect = root.getBoundingClientRect();
     const width = Math.max(root.offsetWidth || 0, Math.abs(rect.width || 0));
@@ -46,7 +46,7 @@
       lastWidgetSize = key;
       bridge.widgetSize({ width, height });
     }
-    if (testMode && key !== lastDiagnosticKey) {
+    if (testMode && (forceDiagnostic || key !== lastDiagnosticKey)) {
       lastDiagnosticKey = key;
       const style = getComputedStyle(root);
       const image = pet.getBoundingClientRect();
@@ -112,7 +112,7 @@
     await rendering.hitCache.prepare(source);
     if (!pet.complete || !pet.naturalWidth || (pet.currentSrc || pet.src) !== source) return;
     if (!ready) { ready = true; bridge.ready(); }
-    reportWidgetSize();
+    reportWidgetSize(true);
     request();
   }
   function fallbackRole() {
