@@ -92,8 +92,10 @@ rl, rt = required(root, 'left'), required(root, 'top')
 ir, it = required(image, 'left'), required(image, 'top')
 if ir < rl - 2 or it < rt - 2 or ir + required(image, 'width') > rl + rw + 2 or it + required(image, 'height') > rt + rh + 2:
     raise SystemExit(f'image escaped root: root={root} image={image}')
-if required(html, 'width') < rw - 2 or required(html, 'height') < rh - 2:
-    raise SystemExit(f'root is outside document viewport: html={html} root={root}')
+document_width = required(html, 'width') if required(html, 'width') > 0 else required(viewport, 'width')
+document_height = required(html, 'height') if required(html, 'height') > 0 else required(viewport, 'height')
+if document_width < rw - 2 or document_height < rh - 2:
+    raise SystemExit(f'root is outside document viewport: html={html} viewport={viewport} root={root}')
 if required(viewport, 'scrollWidth') > required(viewport, 'width') + 2 or required(viewport, 'scrollHeight') > required(viewport, 'height') + 2:
     raise SystemExit(f'outer document overflowed: viewport={viewport}')
 nw, nh = required(native, 'width'), required(native, 'height')
