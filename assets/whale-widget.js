@@ -11356,6 +11356,14 @@
         status: function () { return { switching: bubbleFrames.switching, busy: busy, shown: bubbleShown, scene: bubbleScene && bubbleScene.kind, epoch: bubbleSceneEpoch, balance: state.balance, today: state.todayUsage, status: state.status, front: bubbleFrames.front.root.dataset.buffer, randomPicks: bubbleFrames.front.root.innerText, hitCache: Object.assign({}, WhaleRendering.hitCache.stats), scale: state.scale, flip: state.flip }; }
       });
     }
+    function signalStandaloneLayoutReady() {
+      try {
+        if (standaloneDesktop && window.whaleDesktop && window.whaleDesktop.layoutReady) {
+          var layout = root.getBoundingClientRect();
+          window.whaleDesktop.layoutReady({ width: layout.width, height: layout.height });
+        }
+      } catch (err) {}
+    }
     fetch(SIZE_URL, {
       cache: 'no-store'
     }).then(function (r) {
@@ -11433,8 +11441,10 @@
           }
         }
       } catch (err) {}
+      signalStandaloneLayoutReady();
       refresh(false);
     }).catch(function () {
+      signalStandaloneLayoutReady();
       refresh(false);
     });
     setInterval(function () {

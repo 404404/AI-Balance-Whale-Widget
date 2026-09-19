@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('whaleDesktop', {
   testMode: process.argv.includes('--whale-render-test') || process.env.WHALE_DESKTOP_TEST === '1',
   standalone: process.platform === 'darwin' || process.argv.includes('--standalone'),
   surface: expanded => ipcRenderer.send('whale-surface', !!expanded),
+  layoutReady: size => ipcRenderer.send('whale-layout-ready', size && typeof size === 'object' ? { width: Number(size.width), height: Number(size.height) } : null),
   widgetSize: size => {
     if (!size || typeof size !== 'object') return;
     ipcRenderer.send('whale-widget-size', { width: Number(size.width), height: Number(size.height) });

@@ -38,6 +38,7 @@ let tray;
 let dispatcher;
 let bridge;
 let rendererReady = false;
+let layoutConfigReady = false;
 let layoutReady = false;
 let inputEnabled = false;
 let keyboardFocus = false;
@@ -158,6 +159,7 @@ function restoreWidget() {
   const frame = defaultFrame();
   if (window && !window.isDestroyed()) {
     surfaceExpanded = false;
+    layoutConfigReady = false;
     layoutReady = false;
     lastWidgetSize = '';
     window.setBounds(frame);
@@ -205,7 +207,7 @@ function setSurface(expanded) {
 function setWidgetSize(size) {
   // The page reports its content geometry in one direction only. It must never
   // resize the native window while a native drag is in progress.
-  if (surfaceExpanded || nativeDrag || !size || !Number.isFinite(size.width) || !Number.isFinite(size.height)) return;
+  if (surfaceExpanded || nativeDrag || !layoutConfigReady || !size || !Number.isFinite(size.width) || !Number.isFinite(size.height)) return;
   const width = Math.max(MIN_WIDGET_SIZE, Math.min(MAX_WIDGET_SIZE, Math.ceil(size.width)));
   const height = Math.max(MIN_WIDGET_SIZE, Math.min(MAX_WIDGET_SIZE, Math.ceil(size.height)));
   const key = width + 'x' + height;
@@ -349,6 +351,7 @@ if (!lock) {
     });
     window.webContents.on('render-process-gone', (_event, details) => {
       rendererReady = false;
+      layoutConfigReady = false;
       layoutReady = false;
       inputEnabled = false;
       try { window.setIgnoreMouseEvents(true, { forward: true }); } catch {}
@@ -357,6 +360,7 @@ if (!lock) {
     });
     window.webContents.on('did-start-loading', () => {
       rendererReady = false;
+      layoutConfigReady = false;
       layoutReady = false;
       inputEnabled = false;
       setKeyboardFocus(false);
@@ -389,6 +393,12 @@ if (!lock) {
     });
     ipcMain.on('whale-keyboard-focus', (event, editing) => { if (event.sender === window?.webContents && typeof editing === 'boolean') setKeyboardFocus(editing); });
     ipcMain.on('whale-surface', (event, expanded) => { if (event.sender === window?.webContents && typeof expanded === 'boolean') setSurface(expanded); });
+    ipcMain.on('whale-layout-ready', (event, size) => {
+      if (event.sender !== window?.webContents) return;
+      layoutConfigReady = true;
+      if (size && typeof size === 'object') setWidgetSize(size);
+      visibility();
+    });
     ipcMain.on('whale-widget-size', (event, size) => { if (event.sender === window?.webContents) setWidgetSize(size); });
     ipcMain.on('whale-layout-diagnostic', (event, payload) => {
       if (!layoutTest || event.sender !== window?.webContents || !payload || typeof payload !== 'object') return;
