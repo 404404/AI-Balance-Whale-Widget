@@ -4,8 +4,9 @@
   if (!bridge || !rendering) return;
   const pet = document.querySelector('.dshwv-img'), root = document.querySelector('.dshwv-root');
   const failedRoleSources = new Set();
-  let point = { x: -1, y: -1 }, heldPointer = null, releaseEpoch = 0, interactive = false, keyboardFocus = false, ready = false, lastStorage = '', surfaceExpanded = false, lastWidgetSize = '';
+  let point = { x: -1, y: -1 }, heldPointer = null, releaseEpoch = 0, interactive = false, keyboardFocus = false, ready = false, lastStorage = '', surfaceExpanded = false, lastWidgetSize = '', lastDiagnosticKey = '';
   const standalone = bridge.standalone === true;
+  const testMode = bridge.testMode === true;
   const surfaces = 'dialog[open],.dshwv-menu,.dshwv-menu-btn,.dshwv-rolelist,.dshwv-audiolist,[class*="mask"],.dshwv-qedit,.dshwv-usagepanel,.dshwv-custmenu,.dshwv-custbtn,.dshwv-tplhelp,.dshwv-fxinfo,.dshwv-fxicon,#toast:not([hidden])';
   const keyboardSurfaces = 'dialog[open],.dshwv-menu,.dshwv-rolelist,.dshwv-audiolist,[class*="mask"],.dshwv-qedit,.dshwv-usagepanel,.dshwv-custmenu';
   function visible(el) { return el.checkVisibility({ opacityProperty: true, visibilityProperty: true }); }
@@ -40,9 +41,23 @@
     const width = Math.max(root.offsetWidth || 0, Math.abs(rect.width || 0));
     const height = Math.max(root.offsetHeight || 0, Math.abs(rect.height || 0));
     const key = Math.round(width) + 'x' + Math.round(height);
-    if (width > 0 && height > 0 && key !== lastWidgetSize) {
+    if (width <= 0 || height <= 0) return;
+    if (key !== lastWidgetSize) {
       lastWidgetSize = key;
       bridge.widgetSize({ width, height });
+    }
+    if (testMode && key !== lastDiagnosticKey) {
+      lastDiagnosticKey = key;
+      const style = getComputedStyle(root);
+      const image = pet.getBoundingClientRect();
+      const html = document.documentElement.getBoundingClientRect();
+      bridge.layoutDiagnostic({
+        viewport: { width: window.innerWidth, height: window.innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight },
+        root: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, display: style.display, visibility: style.visibility, opacity: style.opacity, overflow: style.overflow },
+        image: { left: image.left, top: image.top, width: image.width, height: image.height, complete: pet.complete, naturalWidth: pet.naturalWidth, naturalHeight: pet.naturalHeight, display: getComputedStyle(pet).display, visibility: getComputedStyle(pet).visibility, opacity: getComputedStyle(pet).opacity },
+        html: { left: html.left, top: html.top, width: html.width, height: html.height },
+        scale: Number.parseFloat(style.getPropertyValue('--dshw-scale')) || null,
+      });
     }
   }
   function track(e) { point = { x: e.clientX, y: e.clientY }; update(); }
@@ -79,7 +94,11 @@
     }
   });
   rendering.onFrame(update);
-  const request = () => { updateKeyboardFocus(); updateSurface(); reportWidgetSize(); rendering.presentFor(); };
+  // Layout ownership is deliberately one-way in standalone mode: ResizeObserver
+  // and the native resize event report geometry; mutation/animation frames only
+  // update hit testing and rendering. This prevents a window-resize -> DOM
+  // mutation -> window-resize feedback loop.
+  const request = () => { updateKeyboardFocus(); updateSurface(); rendering.presentFor(); };
   new MutationObserver(request).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'src', 'open', 'hidden', 'inert'] });
   document.addEventListener('transitionrun', e => {
     if (e.target.closest('.dshwv-root,.dshwv-position')) rendering.presentFor(600);
@@ -93,6 +112,7 @@
     await rendering.hitCache.prepare(source);
     if (!pet.complete || !pet.naturalWidth || (pet.currentSrc || pet.src) !== source) return;
     if (!ready) { ready = true; bridge.ready(); }
+    reportWidgetSize();
     request();
   }
   function fallbackRole() {

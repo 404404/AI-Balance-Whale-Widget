@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('whaleDesktop', {
     if (!size || typeof size !== 'object') return;
     ipcRenderer.send('whale-widget-size', { width: Number(size.width), height: Number(size.height) });
   },
+  layoutDiagnostic: value => {
+    if (value && typeof value === 'object') ipcRenderer.send('whale-layout-diagnostic', value);
+  },
   dragStart: point => ipcRenderer.send('whale-drag-start', { x: Number(point?.x), y: Number(point?.y) }),
   dragMove: point => ipcRenderer.send('whale-drag-move', { x: Number(point?.x), y: Number(point?.y) }),
   dragEnd: () => ipcRenderer.send('whale-drag-end'),

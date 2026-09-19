@@ -3,6 +3,9 @@
 /* Translation, mirror and pressed-body transforms remain on separate layers. */
 .dshwv-position{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:9999;transition:transform .16s ease;will-change:transform}
 .desktop .dshwv-root{position:absolute;left:0;top:0;right:auto;bottom:auto;transition:transform .3s ease!important;isolation:isolate}
+/* Standalone macOS owns screen geometry in AppKit/Electron. Do not derive the
+   widget size from its own viewport: that creates a 122px feedback fixed point. */
+.desktop .dshwv-root{--dshw-scale:1.5;--dshw-base:clamp(122px,min(calc(250px * var(--dshw-scale)),100vw,100vh),625px);width:var(--dshw-base);height:var(--dshw-base)}
 .desktop .dshwv-body{will-change:transform}
 .desktop .dshwv-img{image-rendering:auto;backface-visibility:hidden}
 .desktop .dshwv-pop svg{shape-rendering:geometricPrecision}

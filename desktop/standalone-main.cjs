@@ -9,8 +9,11 @@ const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..');
 const MIN_WIDGET_SIZE = 122;
+const DEFAULT_WIDGET_SIZE = 375;
+const MAX_WIDGET_SIZE = 625;
 const args = process.argv.slice(1);
 const fixture = process.env.WHALE_DESKTOP_TEST === '1';
+const layoutTest = fixture || process.argv.includes('--whale-render-test');
 const explicitDataDir = args.find(value => value.startsWith('--whale-data='))?.slice('--whale-data='.length);
 const productName = 'DeepSeek-Balance-Whale-Widget';
 const defaultDataDir = path.join(os.homedir(), 'Library', 'Application Support', productName);
@@ -35,6 +38,7 @@ let tray;
 let dispatcher;
 let bridge;
 let rendererReady = false;
+let layoutReady = false;
 let inputEnabled = false;
 let keyboardFocus = false;
 let manuallyHidden = false;
@@ -47,6 +51,7 @@ let lastCursor = '';
 let presents = 0;
 let trustedGestureAt = 0;
 let lastWidgetSize = '';
+let lastLayoutDiagnostic = null;
 const rendererErrors = [];
 const fixtureOpenedLinks = [];
 const stateFile = path.join(dataDir, 'ui-state.json');
@@ -62,7 +67,10 @@ const values = () => uiStore.get();
 const storeValues = input => uiStore.set(input);
 
 function validFrame(frame) {
-  return frame && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(Number(frame[key]))) && frame.width >= MIN_WIDGET_SIZE && frame.height >= MIN_WIDGET_SIZE;
+  return frame && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(Number(frame[key]))) && Number(frame.width) >= MIN_WIDGET_SIZE && Number(frame.height) >= MIN_WIDGET_SIZE;
+}
+function numericFrame(frame) {
+  return { x: Number(frame.x), y: Number(frame.y), width: Number(frame.width), height: Number(frame.height) };
 }
 function workAreaFor(frame) {
   try { return screen.getDisplayMatching(frame).workArea; } catch { return screen.getPrimaryDisplay().workArea; }
@@ -78,15 +86,39 @@ function clampFrame(frame) {
     height,
   };
 }
+function configuredWidgetSize() {
+  const saved = read(path.join(dataDir, '.dshw-size.json'), {});
+  const scale = Number(saved?.scale);
+  const raw = Number.isFinite(scale) && scale >= 0.6 && scale <= 2.5 ? 250 * scale : DEFAULT_WIDGET_SIZE;
+  return Math.max(MIN_WIDGET_SIZE, Math.min(MAX_WIDGET_SIZE, Math.round(raw)));
+}
 function defaultFrame() {
   const area = screen.getPrimaryDisplay().workArea;
-  const width = Math.min(340, area.width);
-  const height = Math.min(340, area.height);
+  const size = configuredWidgetSize();
+  const width = Math.min(size, area.width);
+  const height = Math.min(size, area.height);
   return { x: area.x + area.width - width - 24, y: area.y + area.height - height - 24, width, height };
+}
+function effectiveWidgetSize() {
+  const frame = window && !window.isDestroyed() ? window.getBounds() : defaultFrame();
+  const area = workAreaFor(frame);
+  return Math.max(MIN_WIDGET_SIZE, Math.min(configuredWidgetSize(), area.width, area.height));
 }
 function initialFrame() {
   const saved = read(windowStateFile, {});
-  return clampFrame(validFrame(saved.frame) ? saved.frame : defaultFrame());
+  const size = configuredWidgetSize();
+  if (!validFrame(saved.frame)) return clampFrame({ ...defaultFrame(), width: size, height: size });
+  const frame = numericFrame(saved.frame);
+  // The native frame remembers the screen position only. Its old width/height
+  // can be a 122px feedback-loop artifact, a pre-fix 248x274 frame, or an
+  // expanded settings surface. Derive the startup size from the persisted
+  // scale and preserve the saved bottom-right screen anchor.
+  return clampFrame({
+    x: frame.x + frame.width - size,
+    y: frame.y + frame.height - size,
+    width: size,
+    height: size,
+  });
 }
 function scheduleFrameSave() {
   if (!window || window.isDestroyed()) return;
@@ -112,7 +144,10 @@ function sendCursor(force = false) {
 }
 function visibility() {
   if (!window || window.isDestroyed()) return;
-  if (rendererReady && !manuallyHidden) {
+  // Do not reveal a window whose first DOM measurement still reflects the
+  // 1.5 fallback while the persisted scale asks for another size. This avoids
+  // a clipped first frame and makes the ready handshake include layout.
+  if (rendererReady && layoutReady && !manuallyHidden) {
     if (!window.isVisible()) window.showInactive();
     if (startup.phases.interactive == null) {
       markStartup('interactive');
@@ -128,6 +163,7 @@ function restoreWidget() {
   const frame = defaultFrame();
   if (window && !window.isDestroyed()) {
     surfaceExpanded = false;
+    layoutReady = false;
     lastWidgetSize = '';
     window.setBounds(frame);
     window.setIgnoreMouseEvents(false);
@@ -154,7 +190,7 @@ async function openWebLink(value, gestureRequired = true) {
   } catch { return false; }
 }
 function resizeKeepingBottomRight(width, height) {
-  if (!window || window.isDestroyed()) return;
+  if (!window || window.isDestroyed() || nativeDrag) return;
   const current = window.getBounds();
   const target = clampFrame({ x: current.x + current.width - width, y: current.y + current.height - height, width, height });
   if (target.width === current.width && target.height === current.height && target.x === current.x && target.y === current.y) return;
@@ -169,28 +205,49 @@ function setSurface(expanded) {
   else if (lastWidgetSize) {
     const [width, height] = lastWidgetSize.split('x').map(Number);
     resizeKeepingBottomRight(width, height);
-  } else resizeKeepingBottomRight(340, 340);
+  } else resizeKeepingBottomRight(DEFAULT_WIDGET_SIZE, DEFAULT_WIDGET_SIZE);
 }
 function setWidgetSize(size) {
-  if (surfaceExpanded || !size || !Number.isFinite(size.width) || !Number.isFinite(size.height)) return;
-  const width = Math.max(MIN_WIDGET_SIZE, Math.min(720, Math.ceil(size.width)));
-  const height = Math.max(MIN_WIDGET_SIZE, Math.min(720, Math.ceil(size.height)));
+  // The page reports its content geometry in one direction only. It must never
+  // resize the native window while a native drag is in progress.
+  if (surfaceExpanded || nativeDrag || !size || !Number.isFinite(size.width) || !Number.isFinite(size.height)) return;
+  const width = Math.max(MIN_WIDGET_SIZE, Math.min(MAX_WIDGET_SIZE, Math.ceil(size.width)));
+  const height = Math.max(MIN_WIDGET_SIZE, Math.min(MAX_WIDGET_SIZE, Math.ceil(size.height)));
   const key = width + 'x' + height;
   if (key === lastWidgetSize) return;
   lastWidgetSize = key;
   resizeKeepingBottomRight(width, height);
+  if (!layoutReady) {
+    const expected = effectiveWidgetSize();
+    layoutReady = width === expected && height === expected;
+  }
+  writeLayoutDiagnostic();
+  visibility();
+}
+function cursorScreenPoint(fallback) {
+  try {
+    const point = screen.getCursorScreenPoint();
+    if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) return point;
+  } catch {}
+  return fallback;
 }
 function startNativeDrag(point) {
   if (!window || window.isDestroyed() || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
-  nativeDrag = { x: point.x, y: point.y, frame: window.getBounds() };
+  const cursor = cursorScreenPoint(point);
+  nativeDrag = { x: cursor.x, y: cursor.y, frame: window.getBounds() };
 }
 function moveNativeDrag(point) {
-  if (!nativeDrag || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || !window || window.isDestroyed()) return;
+  if (!nativeDrag || !window || window.isDestroyed()) return;
+  const cursor = cursorScreenPoint(point);
+  if (!Number.isFinite(cursor.x) || !Number.isFinite(cursor.y)) return;
   const frame = nativeDrag.frame;
-  window.setPosition(Math.round(frame.x + point.x - nativeDrag.x), Math.round(frame.y + point.y - nativeDrag.y));
-  sendCursor(true);
+  window.setPosition(Math.round(frame.x + cursor.x - nativeDrag.x), Math.round(frame.y + cursor.y - nativeDrag.y));
 }
-function endNativeDrag() { if (nativeDrag) { nativeDrag = null; scheduleFrameSave(); } }
+function endNativeDrag() { if (nativeDrag) { nativeDrag = null; scheduleFrameSave(); writeLayoutDiagnostic(); } }
+function writeLayoutDiagnostic() {
+  if (!layoutTest || !lastLayoutDiagnostic || !window || window.isDestroyed()) return;
+  try { save(path.join(dataDir, 'layout-diagnostic.json'), { ...lastLayoutDiagnostic, nativeFrame: window.getBounds(), at: new Date().toISOString() }); } catch {}
+}
 function handleDisplayChange() {
   if (!window || window.isDestroyed() || surfaceExpanded) return;
   const fixed = clampFrame(window.getBounds());
@@ -294,6 +351,7 @@ if (!lock) {
     });
     window.webContents.on('render-process-gone', (_event, details) => {
       rendererReady = false;
+      layoutReady = false;
       inputEnabled = false;
       try { window.setIgnoreMouseEvents(true, { forward: true }); } catch {}
       try { save(path.join(dataDir, 'renderer-gone.json'), { at: new Date().toISOString(), reason: details?.reason || 'unknown' }); } catch {}
@@ -301,6 +359,7 @@ if (!lock) {
     });
     window.webContents.on('did-start-loading', () => {
       rendererReady = false;
+      layoutReady = false;
       inputEnabled = false;
       setKeyboardFocus(false);
       window.setIgnoreMouseEvents(true, { forward: true });
@@ -322,13 +381,22 @@ if (!lock) {
       sendCursor(true);
     });
     ipcMain.on('whale-interactive', (event, enabled) => {
-      if (event.sender !== window?.webContents || typeof enabled !== 'boolean' || enabled === inputEnabled) return;
-      inputEnabled = enabled;
-      window.setIgnoreMouseEvents(!enabled, { forward: true });
+      if (event.sender !== window?.webContents || typeof enabled !== 'boolean') return;
+      // A native drag owns input until mouse-up; hover hit-test changes must
+      // not toggle ignoreMouseEvents and make the window appear to jump.
+      const next = nativeDrag ? true : enabled;
+      if (next === inputEnabled) return;
+      inputEnabled = next;
+      window.setIgnoreMouseEvents(!next, { forward: true });
     });
     ipcMain.on('whale-keyboard-focus', (event, editing) => { if (event.sender === window?.webContents && typeof editing === 'boolean') setKeyboardFocus(editing); });
     ipcMain.on('whale-surface', (event, expanded) => { if (event.sender === window?.webContents && typeof expanded === 'boolean') setSurface(expanded); });
     ipcMain.on('whale-widget-size', (event, size) => { if (event.sender === window?.webContents) setWidgetSize(size); });
+    ipcMain.on('whale-layout-diagnostic', (event, payload) => {
+      if (!layoutTest || event.sender !== window?.webContents || !payload || typeof payload !== 'object') return;
+      lastLayoutDiagnostic = payload;
+      writeLayoutDiagnostic();
+    });
     ipcMain.on('whale-drag-start', (event, point) => { if (event.sender === window?.webContents) startNativeDrag(point); });
     ipcMain.on('whale-drag-move', (event, point) => { if (event.sender === window?.webContents) moveNativeDrag(point); });
     ipcMain.on('whale-drag-end', event => { if (event.sender === window?.webContents) endNativeDrag(); });

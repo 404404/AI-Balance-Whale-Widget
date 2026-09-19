@@ -18,8 +18,12 @@
 上游脚本仍负责点击队列、按压/松开动画、气泡、角色命中测试和设置弹窗。独立宿主只提供几个受控 bridge 消息：
 
 - `ready`、`interactive`、`keyboardFocus`：渲染 ready 与透明区域鼠标穿透；
-- `surface`、`widgetSize`：菜单/编辑器打开时扩大窗口，关闭后按人偶几何缩回；
-- `dragStart`、`dragMove`、`dragEnd`：使用 `PointerEvent.screenX/screenY` 移动原生窗口，避免窗口移动后 `clientX/clientY` 变化造成跳动。
+- `surface`、`widgetSize`：菜单/编辑器打开时扩大窗口，关闭后按人偶几何缩回；尺寸消息是单向的 DOM → 原生更新，不再由原生调整后反写网页位置。
+- `dragStart`、`dragMove`、`dragEnd`：原生层以 `screen.getCursorScreenPoint()` 读取真实屏幕坐标，渲染器的 `clientX` 只用于点击/拖动阈值，避免窗口移动后坐标换算造成跳动。
+
+独立模式下原生窗口是唯一的屏幕几何所有者：`window-state.json` 只恢复位置锚点，窗口宽高按 `.dshw-size.json` 的缩放重新计算（默认 1.5，对应约 375×375 DIP）。旧版 122×122 或 248×274 等尺寸会在启动时保留右下锚点并自动迁移，不需要删除偏好。网页端历史 `dshw-pos` 仍可保存在快照中，但独立模式不再应用它，避免把网页视口坐标重新套到原生窗口。
+
+调整缩放时仅在 DOM 尺寸实际变化后更新原生窗口；MutationObserver/动画帧不会再持续发送尺寸协商消息。人偶关闭气泡时保持窗口底部锚点，打开设置时暂时扩大原生窗口，关闭后恢复当前人偶尺寸。
 
 空白区域继续通过 `setIgnoreMouseEvents(..., { forward: true })` 穿透；仅人偶、气泡、菜单和编辑器表面打开交互，不创建覆盖整个桌面的可点击层。菜单栏“恢复人偶位置”只恢复窗口位置/尺寸并重载渲染器，不触碰 API 配置、账本或用户素材。
 
@@ -43,7 +47,11 @@
 └── runtime.json / *.sock    # 本应用自己的本地 bridge
 ```
 
-`WHALE_HOME` 或 `--whale-data` 可用于开发和测试隔离。Unix socket 路径由数据目录 hash 派生；启动时只在确认旧 pid 已退出或 runtime 文件无效时清理同名残留，socket 写入后设为用户私有权限。
+`WHALE_HOME` 或 `--whale-data` 可用于开发和测试隔离。Unix socket 路径由数据目录 hash 派生；启动时只在确认旧 pid 已退出或 runtime 文件无效时清理同名残留，socket 写入后设为用户私有权限。使用 `--whale-render-test` 启动实际打包 App 时，会在隔离数据目录写入脱敏的 DOM/原生几何诊断，供 CI 检查人偶完整可见、图片已加载及无外层滚动。
+
+## 打包体积
+
+Electron 的 arm64 Chromium 运行时是 DMG 体积的主要部分，不能在不改变桌面运行时的情况下大幅删减。打包脚本会排除仅用于开发/Windows/文档的文件和 README 展示图 `assets/DSH2.png`，但保留人偶、气泡图片、音效、编辑器脚本和运行时依赖；构建日志会同时报告 `.app` 与 `app.asar` 大小。用户素材仍写入 Application Support，不会被打包进 App。
 
 ## 当前边界
 

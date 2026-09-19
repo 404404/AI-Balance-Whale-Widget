@@ -12,7 +12,7 @@ AI Balance Whale 是一只常驻 macOS 桌面的透明小鲸鱼挂件，保留�
 - 人偶、气泡、连续点击、拖动、缩放、吸附、翻转、右键/菜单栏入口和上游弹窗编辑器继续由 `assets/whale-widget.js` 驱动；
 - 余额功能保留上游 API 余额模式：账单接口、New API/One API、自定义 JSON、DeepSeek 等适配；没有配置时显示未知或不可查询，不伪造余额；
 - 数据保存在 `~/Library/Application Support/DeepSeek-Balance-Whale-Widget`，不会写入 App Bundle 或 DMG；
-- macOS 窗口位置和缩放由 Electron 原生层维护，屏幕拖动使用稳定的屏幕坐标；
+- macOS 窗口位置和缩放由 Electron 原生层维护：窗口状态只恢复位置，尺寸按当前缩放计算，屏幕拖动使用系统真实屏幕坐标；旧版小窗口会自动迁移；
 - 本阶段不实现 ChatGPT/Codex 订阅 Auth，也不跟随 Codex 窗口。它们是后续独立阶段，不能阻止人偶启动。
 
 ## 安装
@@ -55,7 +55,7 @@ bash scripts/create-dmg.sh
 bash scripts/smoke-mac-app.sh
 ```
 
-`build:mac` 使用固定 Electron 依赖生成 arm64 `.app`，从 `assets/DSniang1.png` 生成任务栏/App 图标，并执行 ad-hoc 签名。验证脚本检查 App 版本、arm64 主程序、asar 资源、代码签名完整性和 DMG 挂载内容；smoke 脚本会启动实际打包 App，等待前端图片/输入 ready，再安全退出。
+`build:mac` 使用固定 Electron 依赖生成 arm64 `.app`，从 `assets/DSniang1.png` 生成任务栏/App 图标，并执行 ad-hoc 签名。验证脚本检查 App 版本、arm64 主程序、asar 资源、代码签名完整性和 DMG 挂载内容；smoke 脚本会在隔离数据目录启动实际打包 App，复现旧版 248×274 窗口并验证 0.6/1.5/2.5 三档缩放、DOM 图片几何和原生窗口一致，再安全退出。打包会排除不参与 standalone 运行的开发/Windows/文档冗余；Electron Chromium 本体仍是主要体积。
 
 GitHub Actions：
 

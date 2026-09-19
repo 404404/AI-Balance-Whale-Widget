@@ -11,6 +11,7 @@
     var STEP = 0.1;
     var CLICK_SQ = 9;
     var REFRESH_MS = 60000;
+    var standaloneDesktop = !!(window.whaleDesktop && window.whaleDesktop.standalone);
 
 
     var BUBBLE_MS = 5000;
@@ -8967,11 +8968,20 @@
       WhaleMoney.bind(hintEl, function () { return captured.status === 'error' ? (captured.message || '获取失败 · 点击重试').slice(0, 20) : captured.balance === null ? '加载中…' : '今日已观测 ' + (captured.todayUsage != null ? fmt(captured.todayUsage, captured.currency) : '--'); });
     }
     function express() {
-      positioner.style.transform = 'translate3d(' + state.left + 'px,' + state.top + 'px,0)';
+      // In standalone mode the native window is the only screen-coordinate
+      // owner. Keeping the web page's old viewport translation would reapply
+      // stale coordinates after a native drag or resize.
+      positioner.style.transform = standaloneDesktop ? 'translate3d(0,0,0)' : 'translate3d(' + state.left + 'px,' + state.top + 'px,0)';
       root.classList.toggle('dshwv-left', !!state.flip);
       WhaleRendering.presentFor(drag && drag.active ? 0 : 200);
     }
     function settle() {
+      if (standaloneDesktop) {
+        state.left = 0;
+        state.top = 0;
+        express();
+        return;
+      }
       var vp = viewport();
       var w = root.offsetWidth || root.getBoundingClientRect().width || 0;
       var h = root.offsetHeight || root.getBoundingClientRect().height || 0;
@@ -9162,13 +9172,15 @@
         var hAnchor = leftDist <= rightDist ? 'left' : 'right';
         var hDistRaw = Math.round(Math.min(leftDist, rightDist));
         var hDist = hAnchor === 'right' && scrollGapOn ? Math.max(0, hDistRaw - rightGap()) : hDistRaw;
-        localStorage.setItem('dshw-pos', JSON.stringify({
-          v: 2,
-          hAnchor: hAnchor,
-          hDist: hDist,
-          vAnchor: topDist <= bottomDist ? 'top' : 'bottom',
-          vDist: Math.round(Math.min(topDist, bottomDist))
-        }));
+        if (!standaloneDesktop) {
+          localStorage.setItem('dshw-pos', JSON.stringify({
+            v: 2,
+            hAnchor: hAnchor,
+            hDist: hDist,
+            vAnchor: topDist <= bottomDist ? 'top' : 'bottom',
+            vDist: Math.round(Math.min(topDist, bottomDist))
+          }));
+        }
       } catch (err) {}
     }
     function setUsageMode(v) {
@@ -9238,6 +9250,13 @@
       scaleInput.value = String(next);
       scaleNumber.value = String(scaleToDisplay(next));
       saveConfig();
+      if (standaloneDesktop) {
+        state.left = 0;
+        state.top = 0;
+        express();
+        requestAnimationFrame(function () { positioner.style.transition = prevTrans; });
+        return;
+      }
       var r2 = whaleLayoutRect();
       var vp = viewport();
       if (state.flip) {
@@ -11269,6 +11288,7 @@
       saveConfig();
     }
     function applyAnchorPos() {
+      if (standaloneDesktop) return false;
       try {
         var a = JSON.parse(localStorage.getItem('dshw-pos') || 'null');
         if (!a || a.v !== 2 || a.hAnchor !== 'left' && a.hAnchor !== 'right' || typeof a.hDist !== 'number' || a.vAnchor !== 'top' && a.vAnchor !== 'bottom' || typeof a.vDist !== 'number') return false;
@@ -11291,12 +11311,13 @@
       }
     }
     window.addEventListener('resize', function () {
+      if (standaloneDesktop) return;
       if (state.h === null && state.v === null && applyAnchorPos()) return;
       settle();
     });
     var rect0 = root.getBoundingClientRect();
-    state.left = rect0.left;
-    state.top = rect0.top;
+    state.left = standaloneDesktop ? 0 : rect0.left;
+    state.top = standaloneDesktop ? 0 : rect0.top;
     express();
     applySoundSet();
     setupHitTest(initRoleUrl);
@@ -11393,8 +11414,9 @@
         applyMenuBtnHideUI();
       }
       try {
-        var a = JSON.parse(localStorage.getItem('dshw-pos') || 'null');
-        if (a && a.v === 2 && (a.hAnchor === 'left' || a.hAnchor === 'right') && typeof a.hDist === 'number' && (a.vAnchor === 'top' || a.vAnchor === 'bottom') && typeof a.vDist === 'number') {
+        if (!standaloneDesktop) {
+          var a = JSON.parse(localStorage.getItem('dshw-pos') || 'null');
+          if (a && a.v === 2 && (a.hAnchor === 'left' || a.hAnchor === 'right') && typeof a.hDist === 'number' && (a.vAnchor === 'top' || a.vAnchor === 'bottom') && typeof a.vDist === 'number') {
           var vpA = viewport();
           var wA = root.offsetWidth || root.getBoundingClientRect().width || 0;
           var hA = root.offsetHeight || root.getBoundingClientRect().height || 0;
@@ -11408,6 +11430,7 @@
           state.v = a.vAnchor;
           state.vOff = a.vDist;
           settle();
+          }
         }
       } catch (err) {}
       refresh(false);
