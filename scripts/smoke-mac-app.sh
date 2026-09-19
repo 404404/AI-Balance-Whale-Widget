@@ -66,7 +66,7 @@ legacy = sys.argv[4] == '1'
 phases = startup.get('phases', {})
 for key in ('appReady','dispatcherReady','windowCreated','pageLoaded','imageAndInputReady','interactive'):
     if key not in phases:
-        raise SystemExit(f'missing startup phase: {key}')
+        raise SystemExit(f'missing startup phase: {key}; diagnostic={diag}')
 root = diag.get('root') or {}
 image = diag.get('image') or {}
 viewport = diag.get('viewport') or {}

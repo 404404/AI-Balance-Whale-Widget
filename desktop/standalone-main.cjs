@@ -99,11 +99,6 @@ function defaultFrame() {
   const height = Math.min(size, area.height);
   return { x: area.x + area.width - width - 24, y: area.y + area.height - height - 24, width, height };
 }
-function effectiveWidgetSize() {
-  const frame = window && !window.isDestroyed() ? window.getBounds() : defaultFrame();
-  const area = workAreaFor(frame);
-  return Math.max(MIN_WIDGET_SIZE, Math.min(configuredWidgetSize(), area.width, area.height));
-}
 function initialFrame() {
   const saved = read(windowStateFile, {});
   const size = configuredWidgetSize();
@@ -217,9 +212,12 @@ function setWidgetSize(size) {
   if (key === lastWidgetSize) return;
   lastWidgetSize = key;
   resizeKeepingBottomRight(width, height);
-  if (!layoutReady) {
-    const expected = effectiveWidgetSize();
-    layoutReady = width === expected && height === expected;
+  if (!layoutReady && window && !window.isDestroyed()) {
+    // The native content bounds after setBounds are the final geometry
+    // contract. Comparing against them avoids a second screen-size formula
+    // disagreeing with AppKit/Electron on a constrained display.
+    const native = window.getContentBounds();
+    layoutReady = Math.abs(width - native.width) <= 2 && Math.abs(height - native.height) <= 2;
   }
   writeLayoutDiagnostic();
   visibility();
