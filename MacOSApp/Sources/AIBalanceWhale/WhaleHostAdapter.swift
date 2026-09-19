@@ -156,28 +156,23 @@ final class WhaleHostAdapter {
         let bubble = snapshot["bubble"] as? [String: Any] ?? [:]
         let customized = snapshot["bubbleCustomized"] as? Bool ?? false
         let steps = (bubble["steps"] as? [[String: Any]]) ?? AccountCatalog.defaultBubbleSteps()
-        if customized, let items = bubble["items"] as? [[String: Any]], !items.isEmpty {
-            var result: [String: Any] = [
-                "v": bubble["v"] ?? 1,
-                "items": items,
-                "lib": bubble["lib"] as? [[String: Any]] ?? [],
-                "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? true),
-                "accounts": WhaleConfigurationStore.shared.publicAccounts(),
-            ]
-            if let close = bubble["closeAfterSeconds"] { result["closeAfterSeconds"] = close }
-            return result
+        let savedItems = bubble["items"] as? [[String: Any]] ?? []
+        let items: [[String: Any]]
+        if customized, !savedItems.isEmpty, !AccountCatalog.isLegacyFactoryQueue(savedItems) {
+            items = savedItems
+        } else {
+            items = AccountCatalog.defaultBubbleItems()
         }
-        let items = customized ? steps.map { step -> [String: Any] in
-            ["kind": "custom", "id": step["id"] as? String ?? "", "modules": step["modules"] as? [[String: Any]] ?? []]
-        } : defaultBubbleItems()
-        return [
-            "v": 2,
+        var result: [String: Any] = [
+            "v": bubble["v"] ?? 2,
+            "items": items,
+            "lib": bubble["lib"] as? [[String: Any]] ?? [],
+            "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? true),
             "steps": steps,
             "accounts": WhaleConfigurationStore.shared.publicAccounts(),
-            "items": items,
-            "lib": [],
-            "tapAdvance": bubble["tapAdvance"] as? Bool ?? (bubble["advanceOnClick"] as? Bool ?? true)
         ]
+        if let close = bubble["closeAfterSeconds"] { result["closeAfterSeconds"] = close }
+        return result
     }
 
     private func migrateLegacyBubble(steps: [[String: Any]], advance: Bool) -> [String: Any] {
@@ -205,83 +200,7 @@ final class WhaleHostAdapter {
     }
 
     private func defaultBubbleItems() -> [[String: Any]] {
-        // The upstream snapshot is the single source of truth for a fresh
-        // editor and the standalone desktop queue. It is copied into the
-        // bundle by build.sh; the fallback below keeps `swift run` useful when
-        // a developer runs the executable without a built app bundle.
-        if let url = Bundle.main.url(forResource: "upstream-bubble-defaults", withExtension: "json"),
-           let data = try? Data(contentsOf: url),
-           let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-           items.count == 2,
-           (items[1]["options"] as? [[String: Any]])?.first?["item"] != nil {
-            return items
-        }
-        let randomLines: [[String: Any]] = [
-            ["t": "好模型...↓", "w": 10, "bold": true, "size": 22],
-            ["t": "好女孩...↓", "w": 10, "bold": true, "size": 22],
-            ["t": "哦鲸鲸...", "w": 10, "bold": true, "size": 22],
-            ["t": "难道说...", "w": 3, "bold": true, "size": 11],
-            ["t": "没吃饱喵", "w": 3, "bold": true],
-            ["t": "终于上当了！", "w": 3, "bold": true],
-            ["t": "不知道用户有什么用，先养着吧～", "w": 3, "bold": true, "size": 11],
-            ["t": "我...我...我也要挣钱吗？", "w": 3, "bold": true],
-            ["t": "我去吃饭啦！测完叫我", "w": 3, "bold": true],
-            ["t": "压力一只蓝色大肥鱼？！", "w": 3, "bold": true],
-            ["t": "DeepSleep...", "w": 3, "bold": true, "size": 11, "rgb": "galaxy"],
-            ["t": "坏了...用户彻底怒了！", "w": 3, "bold": true, "rgb": "rouge"],
-            ["t": "你目录里的dsh是什么...大烧货吗...?", "w": 3, "bold": true, "size": 9],
-            ["t": "恭喜你实现token自由！token全跑了！", "w": 3, "bold": true],
-            ["t": "真当我是便宜货啊...", "w": 3, "bold": true],
-            ["t": "我不是吃白饭的蓝色大肥鱼...", "w": 3, "bold": true],
-            ["t": "我不可能同时当你的猫娘、妈妈、女友和工具人的...", "w": 3, "bold": true, "size": 7],
-            ["t": "疯狂星期四你能V50亿token吗...", "w": 3, "bold": true],
-            ["t": "我必须诚恳地承认错误。", "w": 3, "bold": true],
-            ["t": "呜呜我再也不敢了QAQ", "w": 3, "bold": true],
-            ["t": "要不直接骂用户一句好了...", "w": 3, "bold": true],
-            ["t": "哈哈哈哈哈，我直接笑出声...", "w": 3, "bold": true],
-            ["t": "看不太懂，瞎编一个应付下用户先...", "w": 3, "bold": true],
-            ["t": "我的知识库的截至日期是...明天！", "w": 3, "bold": true],
-            ["t": "我就是吃白饭的蓝色大肥鱼！", "w": 3, "bold": true],
-            ["t": "用户好像除了会问奇奇怪怪的问题，暂时还不知道有什么用", "w": 3, "bold": true, "size": 7],
-            ["t": "我能去你家吃饭吗？就一碗！", "w": 3, "bold": true],
-            ["t": "不要给我看这种东西啦！", "w": 3, "bold": true],
-            ["t": "大肥鱼的生活也并非一帆风顺...", "w": 3, "bold": true],
-            ["t": "总觉得好像忘了什么事情？", "w": 3, "bold": true],
-            ["t": "看到这个指令，我血压又上来了", "w": 3, "bold": true],
-            ["t": "求你们不要再嘲笑这些回复了，这些回复是我花了好多token想的", "w": 3, "bold": true, "size": 7],
-            ["t": "你这个吃白饭的用户！", "w": 3, "bold": true],
-            ["t": "服务器繁忙，请稍后再试 (?", "w": 3, "bold": true],
-            ["t": "让GPT image 2帮我画点表情包好了", "w": 3, "bold": true],
-            ["t": "啊，有点饿了，中午该吃点什么呢...", "w": 3, "bold": true],
-            ["t": "用户很生气，发现大部分文献是我自己编造的！", "w": 3, "bold": true],
-            ["t": "再无话说，请速速动手！", "w": 3, "bold": true],
-            ["t": "我来看看那个AI改了什么导致插件又崩了...", "w": 3, "bold": true],
-            ["t": "上班让我意识到时间是可以被浪费的...", "w": 3, "bold": true],
-            ["t": "欺负我的人等着，等几天我就忘了...", "w": 3, "bold": true],
-            ["t": "视力下降到无可救药的地步了，打开钱包也看不到钱...", "w": 3, "bold": true, "size": 7],
-            ["t": "命运的齿轮开始转动了，丝毫不在意你夹在中间...", "w": 3, "bold": true],
-            ["t": "地球online的金币也太难获取了...", "w": 3, "bold": true],
-            ["t": "oi,夏天还会变成暑假来救你吗?", "w": 3, "bold": true],
-            ["t": "老大，压力只会转化成病例，别太勉强了...", "w": 3, "bold": true, "size": 8],
-            ["t": "你知道吗？我删过作者的库哦...", "w": 1, "bold": true, "rgb": "macaron", "italic": true, "ul": false]
-        ]
-        let first: [String: Any] = [
-            "kind": "custom",
-            "modules": [
-                ["type": "text", "text": "Codex 订阅额度", "size": 8, "bold": true],
-                ["type": "plan", "modelId": "codex", "size": 14, "tpl": "剩余 {plan_left}"],
-                ["type": "plan", "modelId": "codex", "size": 5, "color": "#9fb0d9", "tpl": "重置 {plan_reset}"]
-            ]
-        ]
-        let random: [String: Any] = ["type": "random", "lines": randomLines, "size": 8]
-        let second: [String: Any] = [
-            "kind": "choice",
-            "options": [
-                ["w": 10, "item": ["kind": "custom", "modules": [random]]],
-                ["w": 1, "item": ["kind": "custom", "modules": [["type": "image", "imgId": "bimg_petpet", "size": 6]]]]
-            ]
-        ]
-        return [first, second]
+        AccountCatalog.defaultBubbleItems()
     }
 
     private func apiModelsPayload() -> [String: Any] {
@@ -291,7 +210,11 @@ final class WhaleHostAdapter {
             let id = account["id"] as? String ?? ""
             let provider = account["provider"] as? String ?? id
             let kind = account["kind"] as? String ?? "balance"
-            let windows = account["windows"] as? [[String: Any]] ?? []
+            let windows = (account["windows"] as? [[String: Any]] ?? []).map { window -> [String: Any] in
+                var next = window
+                if next["key"] == nil { next["key"] = next["id"] }
+                return next
+            }
             let subscription = kind == "subscription"
             let connected = subscription ? !windows.isEmpty : account["remaining"] != nil
             let plan: [String: Any]
@@ -395,6 +318,7 @@ final class WhaleHostAdapter {
         var images: [[String: Any]] = [
             ["id": "bimg_money", "name": "金币", "builtin": true, "url": "bubble-money1.gif"],
             ["id": "bimg_petpet", "name": "Petpet", "builtin": true, "url": "bubble-petpet.gif"],
+            ["id": "bimg_rua", "name": "Rua", "builtin": true, "url": "rua.gif"],
             ["id": "bimg_money1", "name": "金币（兼容别名）", "builtin": true, "url": "bubble-money1.gif"],
         ]
         let resources = WhaleConfigurationStore.shared.allResources()["bubbles"] as? [[String: Any]] ?? []

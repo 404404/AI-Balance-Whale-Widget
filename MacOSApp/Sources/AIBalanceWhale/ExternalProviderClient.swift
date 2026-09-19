@@ -17,11 +17,15 @@ final class ExternalProviderClient {
             completion(QuotaFetchSnapshot(ok: false, message: "没有填写登录态或密钥"))
             return
         }
+        if provider == "cursor" {
+            fetchCursor(token: trimmed, completion: completion)
+            return
+        }
         guard let request = request(provider: provider, token: trimmed) else {
             completion(QuotaFetchSnapshot(ok: false, message: "未知厂商"))
             return
         }
-        session.dataTask(with: request) { [weak self] data, response, error in
+        session.dataTask(with: request) { data, response, error in
             let finish: (QuotaFetchSnapshot) -> Void = { result in
                 DispatchQueue.main.async { completion(result) }
             }
@@ -30,10 +34,6 @@ final class ExternalProviderClient {
                 return
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            if provider == "cursor", status >= 400 {
-                self?.fetchCursorSummary(token: trimmed, completion: finish)
-                return
-            }
             if status >= 400 {
                 finish(QuotaFetchSnapshot(ok: false, message: "\(label(provider)) HTTP \(status)"))
                 return
@@ -43,6 +43,41 @@ final class ExternalProviderClient {
                 return
             }
             finish(QuotaJSONParser.parse(provider: provider, object: object))
+        }.resume()
+    }
+
+    private func fetchCursor(token: String, completion: @escaping (QuotaFetchSnapshot) -> Void) {
+        guard let request = request(provider: "cursor", token: token) else {
+            completion(QuotaFetchSnapshot(ok: false, message: "Cursor HTTP 请求无效"))
+            return
+        }
+        session.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
+            if let error {
+                DispatchQueue.main.async { completion(QuotaFetchSnapshot(ok: false, message: String(error.localizedDescription.prefix(160)))) }
+                return
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status >= 400 {
+                self.fetchCursorSummary(token: token) { summary in
+                    self.fetchCursorSand(token: token) { sand in
+                        DispatchQueue.main.async { completion(QuotaJSONParser.mergingCursorBot(summary, sand: sand)) }
+                    }
+                }
+                return
+            }
+            guard let data, let object = try? JSONSerialization.jsonObject(with: data) else {
+                self.fetchCursorSummary(token: token) { summary in
+                    self.fetchCursorSand(token: token) { sand in
+                        DispatchQueue.main.async { completion(QuotaJSONParser.mergingCursorBot(summary, sand: sand)) }
+                    }
+                }
+                return
+            }
+            let snapshot = QuotaJSONParser.parseCursor(object)
+            self.fetchCursorSand(token: token) { sand in
+                DispatchQueue.main.async { completion(QuotaJSONParser.mergingCursorBot(snapshot, sand: sand)) }
+            }
         }.resume()
     }
 
@@ -72,6 +107,30 @@ final class ExternalProviderClient {
         }.resume()
     }
 
+    private func fetchCursorSand(token: String, completion: @escaping (Any?) -> Void) {
+        guard let url = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus") else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyCursorHeaders(&request, token: token)
+        session.dataTask(with: request) { data, response, error in
+            if error != nil {
+                completion(nil)
+                return
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(status), let data, let object = try? JSONSerialization.jsonObject(with: data) else {
+                completion(nil)
+                return
+            }
+            completion(object)
+        }.resume()
+    }
+
     private func request(provider: String, token: String) -> URLRequest? {
         switch provider {
         case "deepseek":
@@ -83,7 +142,11 @@ final class ExternalProviderClient {
             headers["Cookie"] = token.contains("=") ? token : "session_token=\(token)"
             return get("https://chatgpt.com/backend-api/wham/usage", headers: headers)
         case "grok":
-            return get("https://cli-chat-proxy.grok.com/v1/billing", headers: ["Authorization": "Bearer \(token)"])
+            return get("https://cli-chat-proxy.grok.com/v1/billing?format=credits", headers: [
+                "Authorization": "Bearer \(token)",
+                "Accept": "application/json",
+                "x-xai-token-auth": "xai-grok-cli",
+            ])
         case "cursor":
             guard let url = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage") else { return nil }
             var request = URLRequest(url: url)

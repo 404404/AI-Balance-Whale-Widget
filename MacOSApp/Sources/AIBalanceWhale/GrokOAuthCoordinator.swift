@@ -4,6 +4,9 @@ import Network
 import CodexCore
 
 /// App-owned Grok browser OAuth. Tokens never enter WebKit.
+/// xAI's authorize page often fetches 127.0.0.1:56121 via CORS instead of a
+/// top-level redirect; without preflight + Private Network Access headers the
+/// page falls back to "paste this code".
 final class GrokOAuthCoordinator {
     var onResult: ((ProviderError?) -> Void)?
     private let queue = DispatchQueue(label: "com.404404.AIBalanceWhale.grok-oauth")
@@ -69,11 +72,8 @@ final class GrokOAuthCoordinator {
             guard let self else { return }
             var combined = data
             if let chunk { combined.append(chunk) }
-            if let range = combined.range(of: Data("\r\n\r\n".utf8)) {
-                let header = combined[..<range.lowerBound]
-                let line = String(decoding: header, as: UTF8.self).split(whereSeparator: { $0 == "\r" || $0 == "\n" }).first.map(String.init) ?? ""
-                let target = line.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-                self.handleCallback(target: target, connection: connection)
+            if let parsed = GrokOAuthSupport.parseLoopback(combined), parsed.isComplete {
+                self.handleCallback(parsed, connection: connection)
             } else if !isComplete && error == nil {
                 self.receive(connection, data: combined)
             } else if error != nil {
@@ -82,26 +82,38 @@ final class GrokOAuthCoordinator {
         }
     }
 
-    private func handleCallback(target: String, connection: NWConnection) {
-        guard let pending = request else { respond(connection, ok: false); return }
-        let callbackURL = URL(string: "http://\(GrokOAuthSupport.callbackHost)\(target)")
-        let result = callbackURL.map { GrokOAuthSupport.validateCallback($0, request: pending) } ?? .failure(CodexOAuthError("授权回调无法解析"))
-        switch result {
+    private func handleCallback(_ incoming: GrokLoopbackRequest, connection: NWConnection) {
+        let allowPrivate = incoming.requestsPrivateNetwork || GrokOAuthSupport.isTrustedOrigin(incoming.origin)
+        if incoming.method == "OPTIONS" {
+            let payload = GrokOAuthSupport.httpResponse(status: 204, origin: incoming.origin, allowPrivateNetwork: allowPrivate, html: "")
+            connection.send(content: payload, completion: .contentProcessed { _ in connection.cancel() })
+            return
+        }
+        guard let pending = request else {
+            respond(connection, ok: false, origin: incoming.origin, allowPrivate: allowPrivate)
+            return
+        }
+        switch GrokOAuthSupport.extractCallback(target: incoming.target, body: incoming.body, request: pending) {
         case .failure(let message):
-            respond(connection, ok: false)
+            respond(connection, ok: false, origin: incoming.origin, allowPrivate: allowPrivate)
             finish(.protocolError(message.message))
         case .success(let callback):
-            guard consumedState != pending.state else { respond(connection, ok: false); finish(.protocolError("授权回调重复使用")); return }
+            guard consumedState != pending.state else {
+                respond(connection, ok: false, origin: incoming.origin, allowPrivate: allowPrivate)
+                finish(.protocolError("授权回调重复使用"))
+                return
+            }
             consumedState = pending.state
-            respond(connection, ok: true)
+            respond(connection, ok: true, origin: incoming.origin, allowPrivate: allowPrivate)
             exchange(callback: callback, request: pending)
         }
     }
 
-    private func respond(_ connection: NWConnection, ok: Bool) {
+    private func respond(_ connection: NWConnection, ok: Bool, origin: String?, allowPrivate: Bool) {
         let title = ok ? "授权完成，可以返回 AI Balance Whale。" : "授权回调无效，请返回应用重试。"
-        let body = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n<html><meta charset=\"utf-8\"><body>\(title)</body></html>"
-        connection.send(content: Data(body.utf8), completion: .contentProcessed { _ in connection.cancel() })
+        let html = "<html><meta charset=\"utf-8\"><body>\(title)</body></html>"
+        let payload = GrokOAuthSupport.httpResponse(status: 200, origin: origin, allowPrivateNetwork: allowPrivate, html: html)
+        connection.send(content: payload, completion: .contentProcessed { _ in connection.cancel() })
     }
 
     private func exchange(callback: GrokOAuthCallback, request: GrokOAuthRequest) {
