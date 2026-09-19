@@ -19,8 +19,18 @@ ln -s /Applications "$STAGE/Applications"
 mkdir -p "$(dirname "$OUTPUT")"
 rm -f "$OUTPUT"
 hdiutil create -volname "AI Balance Whale ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$OUTPUT" >/dev/null
-hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$OUTPUT" >/dev/null
-ATTACHED=1
+for _ in 1 2 3 4 5; do
+  if hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$OUTPUT" >/dev/null 2>"$MOUNT/attach-error"; then
+    ATTACHED=1
+    break
+  fi
+  hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true
+  sleep 1
+done
+if [[ "$ATTACHED" != 1 ]]; then
+  cat "$MOUNT/attach-error" >&2 || true
+  exit 1
+fi
 [[ -d "$MOUNT/AI Balance Whale.app" ]] || { echo 'DMG missing App' >&2; exit 1; }
 [[ -L "$MOUNT/Applications" ]] || { echo 'DMG missing Applications shortcut' >&2; exit 1; }
 VERSION="$VERSION" bash scripts/verify-mac-app.sh "$MOUNT/AI Balance Whale.app"
