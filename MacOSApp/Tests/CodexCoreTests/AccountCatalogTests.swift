@@ -148,7 +148,7 @@ final class QuotaJSONParserTests: XCTestCase {
         XCTAssertEqual(result.windows.first?.id, "week")
         XCTAssertEqual(result.windows.first?.remainPct, 44)
         let credits = QuotaJSONParser.parseGrok(["creditUsagePercent": 0.22])
-        XCTAssertEqual(credits.windows.first?.remainPct, 78, accuracy: 0.01)
+        XCTAssertEqual(credits.windows.first?.remainPct ?? -1, 78, accuracy: 0.01)
     }
 
     func testCursorPlanUsageWindows() {
@@ -163,13 +163,13 @@ final class QuotaJSONParserTests: XCTestCase {
         XCTAssertEqual(result.windows[1].remainPct, 38, accuracy: 0.01)
         let sand = QuotaJSONParser.parseCursorSand(["usagePercent": 12, "nextResetTimestampUtc": "2026-09-26T18:00:00Z"])
         XCTAssertEqual(sand?.id, "bot")
-        XCTAssertEqual(sand?.remainPct, 88, accuracy: 0.01)
+        XCTAssertEqual(sand?.remainPct ?? -1, 88, accuracy: 0.01)
         let merged = QuotaJSONParser.mergingCursorBot(
             QuotaJSONParser.parseCursor(["planUsage": ["autoPercentUsed": 10, "apiPercentUsed": 20]]),
             sand: ["usagePercent": 33]
         )
         XCTAssertEqual(merged.windows.map(\.id), ["auto", "api", "bot"])
-        XCTAssertEqual(merged.windows.last?.remainPct, 67, accuracy: 0.01)
+        XCTAssertEqual(merged.windows.last?.remainPct ?? -1, 67, accuracy: 0.01)
     }
 
     func testParseFailureDoesNotInventWindows() {
