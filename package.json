@@ -19,12 +19,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/404404/AI-Balance-Whale-Widget.git"
+    "url": "git+https://github.com/404404/DeepSeek-Balance-Whale-Widget.git"
   },
   "bugs": {
-    "url": "https://github.com/404404/AI-Balance-Whale-Widget/issues"
+    "url": "https://github.com/404404/DeepSeek-Balance-Whale-Widget/issues"
   },
-  "homepage": "https://github.com/404404/AI-Balance-Whale-Widget#readme",
+  "homepage": "https://github.com/404404/DeepSeek-Balance-Whale-Widget#readme",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

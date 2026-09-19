@@ -1,5 +1,7 @@
 ## AI Balance Whale macOS
 
+> 仓库已更名为 [`404404/DeepSeek-Balance-Whale-Widget`](https://github.com/404404/DeepSeek-Balance-Whale-Widget)。`main` 保留当前 Swift/AppKit 版本；第一阶段 Electron 独立桌面移植在 [`for-macdesktop`](https://github.com/404404/DeepSeek-Balance-Whale-Widget/tree/for-macdesktop) 分支，二者的安装包与数据目录分别管理。
+
 本 fork 新增了独立的 `AI Balance Whale.app`（macOS 14+、Apple Silicon arm64）。它保留小鲸鱼的点击气泡、按压动画、拖拽、缩放、边缘吸附、左右翻转和音效开关；App Bundle 图标与菜单栏入口都由同一份小鲸鱼素材生成，但宿主已经从 DSH 网页路由中分离出来，安装后的 App 不需要 DSH、浏览器或 Node.js。
 
 当前版本并列显示 Codex / Grok / Cursor 订阅剩余百分比和 DeepSeek 余额，不再做互斥的「Codex 模式 / DeepSeek 模式」。Codex 使用 App 自有的浏览器 OAuth（PKCE + 本机 loopback 回调）取得 ChatGPT 授权，并由原生端通过 WHAM usage 接口读取订阅窗口；不启动 Codex CLI、app-server，也不读取 `CODEX_HOME`。Grok / Cursor / DeepSeek 仍按各自可验证的 API/登录态能力独立配置。首次未连接账户使用空状态，不伪造额度。不会把 token、`auth.json` 或 Keychain 秘密传给 WebView、写入日志、构建产物或 GitHub。
@@ -8,7 +10,7 @@
 
 1. macOS 14 或更高版本（首版仅 Apple Silicon arm64）。
 2. Codex 额度不要求安装 Codex CLI。首次使用时在「设置 → 模型与账户 → Codex」点击“连接账户”，App 会打开官方 ChatGPT 授权页面，完成登录后自动回到 App；不需要复制 token、Cookie、Bearer 字符串或账号 ID。该 App 的授权仅存储在本 App 自有的 macOS Keychain 项中，断开连接不会注销其他 Codex 客户端。
-3. 从本 fork 的 [macOS Releases](https://github.com/404404/AI-Balance-Whale-Widget/releases) 下载最新 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
+3. 从本 fork 的 [macOS Releases](https://github.com/404404/DeepSeek-Balance-Whale-Widget/releases) 下载最新 DMG，将 `AI Balance Whale.app` 拖入 `Applications` 后启动。预发布为 ad-hoc 签名，未经过 Apple Developer ID 签名/公证；若 macOS 阻止打开，请在「系统设置 → 隐私与安全性」确认后选择仍要打开。不要关闭 Gatekeeper。
 
 ### macOS 首版范围
 
