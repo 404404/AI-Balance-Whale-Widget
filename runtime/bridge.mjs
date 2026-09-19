@@ -53,15 +53,35 @@ export async function startBridge(dispatcher, { dataDir = DATA_HOME, onHost = nu
       if (!socket.destroyed) socket.end(JSON.stringify(reply) + '\n');
     });
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(pipe, resolve); });
+  const listen = () => new Promise((resolve, reject) => { server.once("error", reject); server.listen(pipe, resolve); });
+  try {
+    await listen();
+  } catch (error) {
+    if (process.platform === "win32" || error?.code !== "EADDRINUSE") throw error;
+    const previous = readJson(path.join(dataDir, "runtime.json"), null);
+    let active = false;
+    if (previous?.pipe === pipe && Number.isInteger(previous.pid)) {
+      try { process.kill(previous.pid, 0); active = true; }
+      catch (probe) { if (probe.code !== "ESRCH") throw error; }
+    }
+    if (active) throw new Error("挂件已有独立实例正在运行");
+    try { fs.unlinkSync(pipe); }
+    catch (unlinkError) { if (unlinkError.code !== "ENOENT") throw error; }
+    await listen();
+  }
   if (process.platform !== 'win32') { try { fs.chmodSync(pipe, 0o600); } catch {} }
   const runtime = { transport: 'local-ipc', pipe, token, pid: process.pid, instanceId, version: VERSION };
   writeJson(path.join(dataDir, 'runtime.json'), runtime);
   async function close() {
     for (const socket of connections) socket.destroy();
     await new Promise(resolve => server.close(resolve));
-    const file = path.join(dataDir, 'runtime.json');
-    if (readJson(file, {}).instanceId === instanceId) fs.unlinkSync(file);
+    const file = path.join(dataDir, "runtime.json");
+    if (readJson(file, {}).instanceId === instanceId) {
+      try { fs.unlinkSync(file); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (process.platform !== "win32") {
+        try { fs.unlinkSync(pipe); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+    }
   }
   return { ...runtime, server, close };
 }
