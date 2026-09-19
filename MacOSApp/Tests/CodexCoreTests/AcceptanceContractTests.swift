@@ -119,13 +119,25 @@ final class BrowserAuthAcceptanceTests: XCTestCase {
         let url = try XCTUnwrap(GrokOAuthSupport.authorizationURL(request: request))
         XCTAssertEqual(url.host, "auth.x.ai")
         XCTAssertEqual(request.redirectURI, "http://127.0.0.1:56121/callback")
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(items.first(where: { $0.name == "referrer" })?.value, "grok-build")
         let valid = URL(string: "http://127.0.0.1:56121/callback?code=abc&state=\(request.state)")!
         guard case .success(let callback) = GrokOAuthSupport.validateCallback(valid, request: request) else {
             return XCTFail("valid grok callback rejected")
         }
         XCTAssertEqual(callback.code, "abc")
-        let wrongHost = URL(string: "http://localhost:56121/callback?code=abc&state=\(request.state)")!
-        if case .success = GrokOAuthSupport.validateCallback(wrongHost, request: request) { XCTFail("localhost alias accepted") }
+        let localhost = URL(string: "http://localhost:56121/callback?code=abc&state=\(request.state)")!
+        guard case .success = GrokOAuthSupport.validateCallback(localhost, request: request) else {
+            return XCTFail("localhost loopback alias must be accepted")
+        }
+        let raw = Data("OPTIONS /callback HTTP/1.1\r\nOrigin: https://auth.x.ai\r\nAccess-Control-Request-Private-Network: true\r\n\r\n".utf8)
+        let parsed = try XCTUnwrap(GrokOAuthSupport.parseLoopback(raw))
+        XCTAssertEqual(parsed.method, "OPTIONS")
+        XCTAssertTrue(parsed.requestsPrivateNetwork)
+        let preflight = GrokOAuthSupport.httpResponse(status: 204, origin: "https://auth.x.ai", allowPrivateNetwork: true, html: "")
+        let header = String(data: preflight, encoding: .utf8) ?? ""
+        XCTAssertTrue(header.contains("Access-Control-Allow-Private-Network: true"))
+        XCTAssertTrue(header.contains("Access-Control-Allow-Origin: https://auth.x.ai"))
     }
 
     func testCursorBrowserLoginUsesDeepControlPoll() throws {

@@ -120,7 +120,7 @@ public enum AccountCatalog {
         "cursor": [
             "label": "Cursor", "kind": "subscription", "currency": "USD",
             "tokenHint": "本机 Cursor 浏览器登录",
-            "help": "读 Cursor 模型 / 其它模型 / Grok Bot 百分比额度。点连接账户会打开 Cursor 官方登录页，不需要粘贴 Cookie。",
+            "help": "读 Cursor Auto / Cursor API / Grok Bot 百分比额度。点连接账户会打开 Cursor 官方登录页，不需要粘贴 Cookie。",
         ],
         "deepseek": [
             "label": "DeepSeek", "kind": "balance", "currency": "CNY",
@@ -179,7 +179,8 @@ public enum AccountCatalog {
             ["id": "step-dash", "modules": [["type": "dashboard"]]],
             ["id": "step-codex", "modules": [
                 ["type": "text", "text": "Codex 订阅", "size": 12, "bold": true],
-                ["type": "quota", "accountId": "codex", "field": "full"],
+                ["type": "quota", "accountId": "codex", "windowId": "5h", "field": "full"],
+                ["type": "quota", "accountId": "codex", "windowId": "week", "field": "full"],
             ]],
             ["id": "step-grok", "modules": [
                 ["type": "text", "text": "Grok 周额度", "size": 12, "bold": true],
@@ -187,8 +188,9 @@ public enum AccountCatalog {
             ]],
             ["id": "step-cursor", "modules": [
                 ["type": "text", "text": "Cursor", "size": 12, "bold": true],
-                ["type": "quota", "accountId": "cursor", "windowId": "cursor", "field": "full"],
-                ["type": "quota", "accountId": "cursor", "windowId": "other", "field": "full"],
+                ["type": "quota", "accountId": "cursor", "windowId": "auto", "field": "full"],
+                ["type": "quota", "accountId": "cursor", "windowId": "api", "field": "full"],
+                ["type": "quota", "accountId": "cursor", "windowId": "bot", "field": "full"],
             ]],
             ["id": "step-ds", "modules": [
                 ["type": "text", "text": "DeepSeek 余额", "size": 12, "bold": true],
@@ -196,6 +198,42 @@ public enum AccountCatalog {
             ]],
             ["id": "step-fun", "modules": [["type": "random", "lines": randomLines]]],
         ]
+    }
+
+    /// Upstream-renderer items for the demo click queue. Random lines stay the
+    /// full 48-entry pool; the last step is a choice between that pool and the
+    /// bundled Petpet GIF, matching the original fun-step weight.
+    public static func defaultBubbleItems() -> [[String: Any]] {
+        defaultBubbleSteps().map { step in
+            let id = step["id"] as? String ?? ""
+            let modules = step["modules"] as? [[String: Any]] ?? []
+            if id == "step-fun" {
+                let random: [String: Any] = [
+                    "type": "random",
+                    "size": 8,
+                    "lines": randomLines.map { ["t": $0, "w": 1, "bold": true] as [String: Any] },
+                ]
+                return [
+                    "kind": "choice",
+                    "id": id,
+                    "options": [
+                        ["w": 10, "item": ["kind": "custom", "modules": [random]]],
+                        ["w": 1, "item": ["kind": "custom", "modules": [["type": "image", "imgId": "bimg_petpet", "size": 6]]]],
+                    ],
+                ]
+            }
+            return ["kind": "custom", "id": id, "modules": modules]
+        }
+    }
+
+    /// The original DeepSeek-balance + random/GIF factory queue. Users who never
+    /// edited bubbles still have this saved as `items`; treat it as uncustomized
+    /// so the demo quota queue can replace it.
+    public static func isLegacyFactoryQueue(_ items: [[String: Any]]) -> Bool {
+        guard items.count == 2, items[1]["kind"] as? String == "choice" else { return false }
+        let blob = compactJSON(items[0]["modules"] as? [[String: Any]] ?? []) ?? ""
+        if blob.contains("grok") || blob.contains("cursor") || blob.contains("dashboard") { return false }
+        return blob.contains("DeepSeek") || blob.contains("balance_ds") || blob.contains("codex")
     }
 
     public static func makeAccount(provider: String, id: String? = nil) -> [String: Any] {
@@ -242,6 +280,8 @@ public enum AccountCatalog {
 
         var bubble = (loaded["bubble"] as? [String: Any]) ?? [:]
         let steps = bubble["steps"] as? [[String: Any]] ?? []
+        let savedItems = bubble["items"] as? [[String: Any]] ?? []
+        let factoryItems = isLegacyFactoryQueue(savedItems)
         if !isCanonicalSteps(steps) {
             if let converted = canonicalSteps(fromUpstream: loaded["upstreamBubble"] as? [String: Any] ?? [:]), !converted.isEmpty {
                 bubble["steps"] = converted
@@ -249,14 +289,20 @@ public enum AccountCatalog {
                 bubble["steps"] = defaultBubbleSteps()
             }
         }
+        if factoryItems {
+            bubble["items"] = defaultBubbleItems()
+            bubble["steps"] = defaultBubbleSteps()
+        }
         if bubble["closeAfterSeconds"] == nil { bubble["closeAfterSeconds"] = 0 }
         if bubble["advanceOnClick"] == nil { bubble["advanceOnClick"] = true }
         next["bubble"] = bubble
-        if next["bubbleCustomized"] == nil {
+        if factoryItems {
+            next["bubbleCustomized"] = false
+        } else if next["bubbleCustomized"] == nil {
             let loadedSteps = (loaded["bubble"] as? [String: Any])?["steps"] as? [[String: Any]] ?? []
             let differsFromFactory = compactJSON(loadedSteps) != compactJSON(defaultBubbleSteps())
             let upstreamItems = (loaded["upstreamBubble"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
-            next["bubbleCustomized"] = differsFromFactory || !upstreamItems.isEmpty
+            next["bubbleCustomized"] = differsFromFactory || (!upstreamItems.isEmpty && !isLegacyFactoryQueue(upstreamItems))
         }
 
         var appearance = (loaded["appearance"] as? [String: Any]) ?? [:]
@@ -453,7 +499,7 @@ public enum AccountCatalog {
                     converted.append([
                         "type": "quota",
                         "accountId": module["accountId"] as? String ?? module["modelId"] as? String ?? "codex",
-                        "windowId": module["windowId"] as? String ?? "",
+                        "windowId": module["windowId"] as? String ?? module["planWin"] as? String ?? "",
                         "field": module["field"] as? String ?? "full",
                     ])
                 case "balance":
@@ -477,11 +523,19 @@ public enum AccountCatalog {
     }
 
     private static func mapCodexWindow(_ bucket: RateLimitBucket) -> (id: String, label: String) {
+        let minutes = bucket.windowDurationMinutes ?? 0
+        if minutes > 0, minutes % (7 * 24 * 60) == 0 {
+            return ("week", bucket.name?.isEmpty == false ? bucket.name! : "本周")
+        }
+        if bucket.window == .secondary {
+            return ("week", bucket.name?.isEmpty == false ? bucket.name! : "本周")
+        }
+        if bucket.window == .primary || (minutes > 0 && minutes <= 6 * 60) {
+            return ("5h", bucket.name?.isEmpty == false ? bucket.name! : "5 小时")
+        }
         if bucket.id == "codex" || bucket.id.isEmpty {
             let duration = bucket.windowDurationMinutes.map(String.init) ?? bucket.window.rawValue
-            let id = "\(bucket.window.rawValue)-\(duration)"
-            let label = bucket.name?.isEmpty == false ? bucket.name! : RateLimitPresentation.windowName(for: bucket, durationMinutes: bucket.windowDurationMinutes)
-            return (id, label)
+            return ("\(bucket.window.rawValue)-\(duration)", bucket.windowName)
         }
         return (bucket.id, bucket.windowName)
     }

@@ -18,9 +18,26 @@ final class AccountCatalogTests: XCTestCase {
         let steps = AccountCatalog.defaultBubbleSteps()
         XCTAssertEqual(steps.count, 6)
         XCTAssertEqual((steps[0]["modules"] as? [[String: Any]])?.first?["type"] as? String, "dashboard")
-        XCTAssertEqual((steps[1]["modules"] as? [[String: Any]])?[1]["accountId"] as? String, "codex")
+        let codex = steps[1]["modules"] as? [[String: Any]] ?? []
+        XCTAssertEqual(codex[1]["accountId"] as? String, "codex")
+        XCTAssertEqual(codex[1]["windowId"] as? String, "5h")
+        XCTAssertEqual(codex[2]["windowId"] as? String, "week")
+        let cursor = steps[3]["modules"] as? [[String: Any]] ?? []
+        XCTAssertEqual(cursor.map { $0["windowId"] as? String }, [nil, "auto", "api", "bot"])
         XCTAssertEqual((steps[4]["modules"] as? [[String: Any]])?[1]["type"] as? String, "balance")
         XCTAssertEqual((steps[5]["modules"] as? [[String: Any]])?[0]["type"] as? String, "random")
+        let items = AccountCatalog.defaultBubbleItems()
+        XCTAssertEqual(items.count, 6)
+        XCTAssertEqual(items[5]["kind"] as? String, "choice")
+        let randomLines = (((items[5]["options"] as? [[String: Any]])?.first?["item"] as? [String: Any])?["modules"] as? [[String: Any]])?.first?["lines"] as? [[String: Any]] ?? []
+        XCTAssertEqual(randomLines.count, 48)
+        let gif = ((items[5]["options"] as? [[String: Any]])?.last?["item"] as? [String: Any])?["modules"] as? [[String: Any]] ?? []
+        XCTAssertEqual(gif.first?["imgId"] as? String, "bimg_petpet")
+        XCTAssertTrue(AccountCatalog.isLegacyFactoryQueue([
+            ["kind": "custom", "modules": [["type": "text", "text": "DeepSeek 余额"], ["type": "balance", "tpl": "{balance_ds}"]]],
+            ["kind": "choice", "options": []],
+        ]))
+        XCTAssertFalse(AccountCatalog.isLegacyFactoryQueue(items))
     }
 
     func testRandomDefaultsContainUpstreamFullPool() {
@@ -130,15 +147,29 @@ final class QuotaJSONParserTests: XCTestCase {
         let result = QuotaJSONParser.parseGrok(["used_percent": 56, "reset_at": 1_730_000_000])
         XCTAssertEqual(result.windows.first?.id, "week")
         XCTAssertEqual(result.windows.first?.remainPct, 44)
+        let credits = QuotaJSONParser.parseGrok(["creditUsagePercent": 0.22])
+        XCTAssertEqual(credits.windows.first?.remainPct, 78, accuracy: 0.01)
     }
 
     func testCursorPlanUsageWindows() {
         let result = QuotaJSONParser.parseCursor([
             "planUsage": ["autoPercentUsed": 0.29, "apiPercentUsed": 62, "botPercentUsed": 10],
         ])
-        XCTAssertEqual(result.windows.map(\.id), ["cursor", "other", "bot"])
+        XCTAssertEqual(result.windows.map(\.id), ["auto", "api", "bot"])
+        XCTAssertEqual(result.windows[0].label, "Cursor Auto")
+        XCTAssertEqual(result.windows[1].label, "Cursor API")
+        XCTAssertEqual(result.windows[2].label, "Grok Bot")
         XCTAssertEqual(result.windows[0].remainPct, 71, accuracy: 0.01)
         XCTAssertEqual(result.windows[1].remainPct, 38, accuracy: 0.01)
+        let sand = QuotaJSONParser.parseCursorSand(["usagePercent": 12, "nextResetTimestampUtc": "2026-09-26T18:00:00Z"])
+        XCTAssertEqual(sand?.id, "bot")
+        XCTAssertEqual(sand?.remainPct, 88, accuracy: 0.01)
+        let merged = QuotaJSONParser.mergingCursorBot(
+            QuotaJSONParser.parseCursor(["planUsage": ["autoPercentUsed": 10, "apiPercentUsed": 20]]),
+            sand: ["usagePercent": 33]
+        )
+        XCTAssertEqual(merged.windows.map(\.id), ["auto", "api", "bot"])
+        XCTAssertEqual(merged.windows.last?.remainPct, 67, accuracy: 0.01)
     }
 
     func testParseFailureDoesNotInventWindows() {

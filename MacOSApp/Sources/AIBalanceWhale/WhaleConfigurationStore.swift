@@ -280,6 +280,7 @@ final class WhaleConfigurationStore {
                 "firstAction": "show",
                 "againAction": "toggle",
                 "steps": AccountCatalog.defaultBubbleSteps(),
+                "items": AccountCatalog.defaultBubbleItems(),
             ],
             "bubbleCustomized": false,
             "accounts": AccountCatalog.defaultAccounts(),
@@ -290,6 +291,7 @@ final class WhaleConfigurationStore {
                 "bubbles": [
                     ["id": "builtin-money", "name": "金币", "relativePath": "bubble-money1.gif", "mime": "image/gif", "builtin": true],
                     ["id": "builtin-petpet", "name": "Petpet", "relativePath": "bubble-petpet.gif", "mime": "image/gif", "builtin": true],
+                    ["id": "builtin-rua", "name": "Rua", "relativePath": "rua.gif", "mime": "image/gif", "builtin": true],
                 ],
                 "audio": [
                     ["id": "builtin-press", "name": "按下", "relativePath": "Ya1.mp3", "mime": "audio/mpeg", "builtin": true],

@@ -5846,8 +5846,13 @@ function bubbleParseDefaultItems() {
 
 // —— 默认队列 = 首次点击 + 第2次点击(全新安装无配置时的体验)
 function bubbleDefaultQueue() {
-  // 出厂默认已固化为当前生效配置快照(见上方 BUBBLE_DEFAULT_ITEMS);
-  // 以下旧默认体保留但不可达,仅作历史参照。
+  // Standalone Mac app uses the demo quota queue. The upstream
+  // BUBBLE_DEFAULT_ITEMS snapshot stays intact as the original random/GIF pool.
+  try {
+    if (window.__AIWhaleStandalone && window.__AIWhaleDemoBubbleItems && window.__AIWhaleDemoBubbleItems.length) {
+      return JSON.parse(JSON.stringify(window.__AIWhaleDemoBubbleItems))
+    }
+  } catch (err) {}
   return bubbleParseDefaultItems()
   return [
     { kind: 'custom', modules: bubbleDefaultFirstModules() },
@@ -7363,6 +7368,33 @@ function renderBubblePal() {
       bubblePalEl.appendChild(chip)
     })(defs[i])
   }
+  if (window.__AIWhaleStandalone) {
+    var quotaChips = [
+      { label: 'Codex 5小时', accountId: 'codex', windowId: '5h' },
+      { label: 'Codex 周额度', accountId: 'codex', windowId: 'week' },
+      { label: 'Grok 周额度', accountId: 'grok', windowId: 'week' },
+      { label: 'Cursor Auto', accountId: 'cursor', windowId: 'auto' },
+      { label: 'Cursor API', accountId: 'cursor', windowId: 'api' },
+      { label: 'Grok Bot', accountId: 'cursor', windowId: 'bot' },
+    ]
+    quotaChips.forEach(function (chipDef) {
+      var chip = document.createElement('div')
+      chip.className = 'dshwv-palchip'
+      chip.setAttribute('data-pal', 'quota:' + chipDef.accountId + ':' + chipDef.windowId)
+      chip.textContent = chipDef.label
+      chip.title = '订阅额度 · ' + chipDef.label
+      chip.draggable = true
+      chip.addEventListener('click', function (e) {
+        e.stopPropagation()
+        bubbleModuleAdd({ type: 'quota', accountId: chipDef.accountId, windowId: chipDef.windowId, field: 'full', size: 8 })
+      })
+      chip.addEventListener('dragstart', function (e) {
+        try { e.dataTransfer.setData('text/plain', 'quota:' + chipDef.accountId + ':' + chipDef.windowId) } catch (err) {}
+        bubbleDragKey = 'quota:' + chipDef.accountId + ':' + chipDef.windowId
+      })
+      bubblePalEl.appendChild(chip)
+    })
+  }
   // 自定义 API 模型：每个模型一个「余额·<模型名>」模块（删除模型时由宿主级联清理泡泡配置）
   if (apiModelsLoaded) {
     apiModels.forEach(function (am) {
@@ -7680,6 +7712,12 @@ function bubblePaletteModule(key) {
     var am2 = apiModelById(key.slice(3))
     if (!am2) return null
     return { type: 'plan', modelId: am2.id, size: 8, tpl: '{plan} · {plan_reset}', planWin: 'all' }
+  }
+  if (typeof key === 'string' && key.indexOf('quota:') === 0) {
+    var parts = key.split(':')
+    if (parts.length >= 3) {
+      return { type: 'quota', accountId: parts[1], windowId: parts.slice(2).join(':'), field: 'full', size: 8 }
+    }
   }
   if (key === 'random') return bubbleCloneModule(bubbleDefaultSecondModules()[0])
   if (typeof key === 'string' && key.indexOf('lib:') === 0) {
@@ -10230,6 +10268,9 @@ function bubbleReshowCurrent() {
 function applyStandaloneNativeState() {
   if (!window.__AIWhaleStandalone) return
   var incoming = window.__AIWhaleState || {}
+  if (Array.isArray(incoming.demoBubbleItems) && incoming.demoBubbleItems.length) {
+    window.__AIWhaleDemoBubbleItems = incoming.demoBubbleItems
+  }
   var canonical = incoming.bubbleConfig
   var nextRevision = canonical && Array.isArray(canonical.items)
     ? String(incoming.bubbleRevision == null ? JSON.stringify(canonical) : incoming.bubbleRevision)
@@ -11708,6 +11749,35 @@ function bubblePeakRowApply(x, peak) {
   } catch (err) {}
 }
 // v209: 计算单个模块要显示的行文本(与随机选中行),每次全新计算、不跨行复用状态
+function whaleWindowAliases(id) {
+  var key = String(id || '')
+  var groups = [
+    ['5h', 'primary-300', 'primary', 'rolling'],
+    ['week', 'weekly', 'secondary-10080', 'secondary'],
+    ['auto', 'cursor'],
+    ['api', 'other'],
+    ['bot', 'grokbot', 'grok-bot']
+  ]
+  for (var i = 0; i < groups.length; i++) {
+    if (groups[i].indexOf(key) >= 0) return groups[i]
+  }
+  return [key]
+}
+function whaleWindowOf(windows, wanted) {
+  var list = Array.isArray(windows) ? windows.filter(Boolean) : []
+  if (!list.length) return null
+  var want = String(wanted || '')
+  if (!want) return list[0]
+  var aliases = whaleWindowAliases(want)
+  for (var i = 0; i < list.length; i++) {
+    var id = String(list[i].id || list[i].key || '')
+    var group = whaleWindowAliases(id)
+    for (var j = 0; j < aliases.length; j++) {
+      if (group.indexOf(aliases[j]) >= 0) return list[i]
+    }
+  }
+  return null
+}
 function standaloneCodexAccount(mod) {
   if (!window.__AIWhaleStandalone) return null
   var id = mod && (mod.accountId || mod.modelId)
@@ -11729,12 +11799,8 @@ function standaloneCodexQuota(mod) {
     return (isFinite(remain) && remain >= 0 && remain <= 100) || (isFinite(used) && used >= 0 && used <= 100)
   }) : []
   if (!windows.length) return null
-  var wanted = mod && mod.windowId != null ? String(mod.windowId) : ""
-  var win = wanted ? windows.filter(function (w) { return String(w.id || "") === wanted })[0] : null
-  if (!win && wanted) {
-    var secondary = wanted === "secondary" || wanted === "weekly" || wanted === "week" || wanted === "other"
-    win = windows.filter(function (w) { return String(w.id || "").indexOf(secondary ? "secondary" : "primary") === 0 })[0]
-  }
+  var wanted = mod && (mod.windowId != null ? String(mod.windowId) : String(mod.planWin || ''))
+  var win = whaleWindowOf(windows, wanted)
   if (!win) win = windows[0]
   var remain = Number(win.remainPct), used = Number(win.usedPct)
   if (!isFinite(remain) && isFinite(used)) remain = 100 - used
@@ -11785,7 +11851,8 @@ function standaloneMetricText(mod) {
     return bubbleContentText(m, money)
   }
   var windows = official ? [official.window] : (Array.isArray(account.windows) ? account.windows : [])
-  var win = official ? official.window : (m.windowId ? windows.filter(function (w) { return w && w.id === m.windowId })[0] : windows[0])
+  var wanted = m.windowId || m.planWin || ''
+  var win = official ? official.window : whaleWindowOf(windows, wanted)
   if (!win) return '未连接'
   var raw
   var field = m.field || (m.type === 'plan' ? 'remain' : 'summary')

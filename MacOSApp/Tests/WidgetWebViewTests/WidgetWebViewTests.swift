@@ -486,7 +486,7 @@ class WidgetWebViewTests: XCTestCase {
             accounts: [
               {id:'codex',name:'Codex',provider:'codex',kind:'subscription',enabled:true,status:'ok',windows:[{id:'primary-300',label:'5 小时',remainPct:62,usedPct:38}]},
               {id:'grok',name:'Grok',provider:'grok',kind:'subscription',enabled:true,status:'ok',windows:[{id:'week',label:'本周',remainPct:44,usedPct:56}]},
-              {id:'cursor',name:'Cursor',provider:'cursor',kind:'subscription',enabled:true,status:'ok',windows:[{id:'cursor',label:'Cursor 模型',remainPct:71,usedPct:29}]},
+              {id:'cursor',name:'Cursor',provider:'cursor',kind:'subscription',enabled:true,status:'ok',windows:[{id:'auto',label:'Cursor Auto',remainPct:71,usedPct:29},{id:'api',label:'Cursor API',remainPct:38,usedPct:62},{id:'bot',label:'Grok Bot',remainPct:90,usedPct:10}]},
               {id:'deepseek',name:'DeepSeek',provider:'deepseek',kind:'balance',enabled:true,remaining:12.5,currency:'CNY'}
             ],
             bubble: {steps: [
@@ -510,7 +510,10 @@ class WidgetWebViewTests: XCTestCase {
             dash: window.standaloneMetricText({type:'dashboard'}),
             grok: window.standaloneMetricText({type:'quota',accountId:'grok',windowId:'week',field:'remain'}),
             cursor: window.standaloneMetricText({type:'quota',accountId:'cursor',windowId:'cursor',field:'remain'}),
+            cursorAuto: window.standaloneMetricText({type:'quota',accountId:'cursor',windowId:'auto',field:'remain'}),
+            grokBot: window.standaloneMetricText({type:'quota',accountId:'cursor',windowId:'bot',field:'remain'}),
             codex: window.standaloneMetricText({type:'quota',accountId:'codex',windowId:'primary-300',field:'remain'}),
+            codex5h: window.standaloneMetricText({type:'quota',accountId:'codex',windowId:'5h',field:'remain'}),
             moneyGrok: window.standaloneMetricText({type:'balance',accountId:'grok'})
           })
         """) as? [String: Any] ?? [:]
@@ -522,7 +525,10 @@ class WidgetWebViewTests: XCTestCase {
         XCTAssertFalse(dash.contains("$0"), "subscription remaining must not render as $0.00")
         XCTAssertEqual(connected["grok"] as? String, "44%")
         XCTAssertEqual(connected["cursor"] as? String, "71%")
+        XCTAssertEqual(connected["cursorAuto"] as? String, "71%")
+        XCTAssertEqual(connected["grokBot"] as? String, "90%")
         XCTAssertEqual(connected["codex"] as? String, "62%")
+        XCTAssertEqual(connected["codex5h"] as? String, "62%")
         XCTAssertEqual(connected["moneyGrok"] as? String, "44%", "a balance module bound to a subscription must still show percent remaining")
 
         _ = try await evaluate(webView, "window.__AIWhale.nativePointerDown(); window.__AIWhale.nativePointerUp(false)")
